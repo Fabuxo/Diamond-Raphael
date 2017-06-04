@@ -673,6 +673,67 @@ static unsigned long hw_limit_rate(const struct hws_qsi_info_block *si,
 		       si->min_sampl_rate, si->max_sampl_rate);
 }
 
+static u32 cpumsf_pid_type(struct perf_event *event,
+			   u32 pid, enum pid_type type)
+{
+	struct task_struct *tsk;
+
+	/* Idle process */
+	if (!pid)
+		goto out;
+
+	tsk = find_task_by_pid_ns(pid, &init_pid_ns);
+	pid = -1;
+	if (tsk) {
+		/*
+		 * Only top level events contain the pid namespace in which
+		 * they are created.
+		 */
+		if (event->parent)
+			event = event->parent;
+		pid = __task_pid_nr_ns(tsk, type, event->ns);
+		/*
+		 * See also 1d953111b648
+		 * "perf/core: Don't report zero PIDs for exiting tasks".
+		 */
+		if (!pid && !pid_alive(tsk))
+			pid = -1;
+	}
+out:
+	return pid;
+}
+
+static void cpumsf_output_event_pid(struct perf_event *event,
+				    struct perf_sample_data *data,
+				    struct pt_regs *regs)
+{
+	u32 pid;
+	struct perf_event_header header;
+	struct perf_output_handle handle;
+
+	/*
+	 * Obtain the PID from the basic-sampling data entry and
+	 * correct the data->tid_entry.pid value.
+	 */
+	pid = data->tid_entry.pid;
+
+	/* Protect callchain buffers, tasks */
+	rcu_read_lock();
+
+	perf_prepare_sample(&header, data, event, regs);
+	if (perf_output_begin(&handle, event, header.size))
+		goto out;
+
+	/* Update the process ID (see also kernel/events/core.c) */
+	data->tid_entry.pid = cpumsf_pid_type(event, pid, PIDTYPE_TGID);
+	data->tid_entry.tid = cpumsf_pid_type(event, pid, PIDTYPE_PID);
+
+	perf_output_sample(&handle, &header, data, event);
+	perf_output_end(&handle);
+out:
+	rcu_read_unlock();
+}
+
 static int __hw_perf_event_init(struct perf_event *event)
 {
 	struct cpu_hw_sf *cpuhw;
