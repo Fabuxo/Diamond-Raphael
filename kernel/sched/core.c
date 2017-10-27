@@ -31,8 +31,8 @@
 #include <linux/syscalls.h>
 #include <linux/irq.h>
 #include <linux/delay.h>
-
 #include <linux/kthread.h>
+#include <linux/sched/isolation.h>
 
 #include <asm/switch_to.h>
 #include <linux/msm_rtb.h>

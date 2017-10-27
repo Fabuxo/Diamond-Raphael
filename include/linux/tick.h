@@ -158,7 +158,6 @@ static inline void tick_nohz_idle_stop_tick_protected(void) { }
 #ifdef CONFIG_NO_HZ_FULL
 extern bool tick_nohz_full_running;
 extern cpumask_var_t tick_nohz_full_mask;
-extern cpumask_var_t housekeeping_mask;
 
 static inline bool tick_nohz_full_enabled(void)
 {
@@ -271,15 +270,6 @@ static inline void tick_dep_clear_signal(struct signal_struct *signal,
 static inline void tick_nohz_full_kick_cpu(int cpu) { }
 static inline void __tick_nohz_task_switch(void) { }
 #endif
-
-static inline bool is_housekeeping_cpu(int cpu)
-{
-#ifdef CONFIG_NO_HZ_FULL
-	if (tick_nohz_full_enabled())
-		return cpumask_test_cpu(cpu, housekeeping_mask);
-#endif
-	return !cpu_isolated(cpu);
-}
 
 static inline void tick_nohz_task_switch(void)
 {

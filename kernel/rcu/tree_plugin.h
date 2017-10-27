@@ -24,6 +24,17 @@
  *	   Paul E. McKenney <paulmck@linux.vnet.ibm.com>
  */
 
+#include <linux/delay.h>
+#include <linux/gfp.h>
+#include <linux/oom.h>
+#include <linux/sched/debug.h>
+#include <linux/smpboot.h>
+#include <linux/sched/isolation.h>
+#include <uapi/linux/sched/types.h>
+#include "../time/tick-internal.h"
+
+#ifdef CONFIG_RCU_BOOST
+
 #include "../locking/rtmutex_common.h"
 #include <linux/sched/isolation.h>
 
