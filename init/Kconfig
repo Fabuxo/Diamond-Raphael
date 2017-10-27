@@ -561,7 +561,29 @@ config PSI_DEFAULT_DISABLED
 
 	  Say N if unsure.
 
+config PSI_FTRACE
+	bool "Insert debug hooks for PSI ftrace events"
+	default n
+	depends on PSI
+	help
+	  If not set, PSI ftrace events will be disabled and
+	  will not incur any performance penalty.
+	  If set, PSI ftrace events may be
+	  enabled.
+
 endmenu # "CPU/Task time and stats accounting"
+
+config CPU_ISOLATION
+	bool "CPU isolation"
+	depends on SMP || COMPILE_TEST
+	default y
+	help
+	  Make sure that CPUs running critical tasks are not disturbed by
+	  any source of "noise" such as unbound workqueues, timers, kthreads...
+	  Unbound jobs get offloaded to housekeeping CPUs. This is driven by
+	  the "isolcpus=" boot parameter.
+
+	  Say Y if unsure.
 
 source "kernel/rcu/Kconfig"
 
