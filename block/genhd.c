@@ -603,6 +603,11 @@ static void register_disk(struct device *parent, struct gendisk *disk)
 	 */
 	pm_runtime_set_memalloc_noio(ddev, true);
 
+	if (disk->flags & GENHD_FL_HIDDEN) {
+		dev_set_uevent_suppress(ddev, 0);
+		return;
+	}
+
 	disk->part0.holder_dir = kobject_create_and_add("holders", &ddev->kobj);
 	disk->slave_dir = kobject_create_and_add("slaves", &ddev->kobj);
 
@@ -644,18 +649,19 @@ exit:
 }
 
 /**
- * device_add_disk - add partitioning information to kernel list
+ * __device_add_disk - add disk information to kernel list
  * @parent: parent device for the disk
  * @disk: per-device partitioning information
+ * @register_queue: register the queue if set to true
  *
  * This function registers the partitioning information in @disk
  * with the kernel.
  *
  * FIXME: error handling
  */
-void device_add_disk(struct device *parent, struct gendisk *disk)
+static void __device_add_disk(struct device *parent, struct gendisk *disk,
+			      bool register_queue)
 {
-	struct backing_dev_info *bdi;
 	dev_t devt;
 	int retval;
 
@@ -664,7 +670,8 @@ void device_add_disk(struct device *parent, struct gendisk *disk)
 	 * parameters make sense.
 	 */
 	WARN_ON(disk->minors && !(disk->major || disk->first_minor));
-	WARN_ON(!disk->minors && !(disk->flags & GENHD_FL_EXT_DEVT));
+	WARN_ON(!disk->minors &&
+		!(disk->flags & (GENHD_FL_EXT_DEVT | GENHD_FL_HIDDEN)));
 
 	disk->flags |= GENHD_FL_UP;
 
@@ -673,21 +680,32 @@ void device_add_disk(struct device *parent, struct gendisk *disk)
 		WARN_ON(1);
 		return;
 	}
-	disk_to_dev(disk)->devt = devt;
 	disk->major = MAJOR(devt);
 	disk->first_minor = MINOR(devt);
 
 	disk_alloc_events(disk);
 
-	/* Register BDI before referencing it from bdev */
-	bdi = disk->queue->backing_dev_info;
-	retval = bdi_register_owner(bdi, disk_to_dev(disk));
-	WARN_ON(retval);
+	if (disk->flags & GENHD_FL_HIDDEN) {
+		/*
+		 * Don't let hidden disks show up in /proc/partitions,
+		 * and don't bother scanning for partitions either.
+		 */
+		disk->flags |= GENHD_FL_SUPPRESS_PARTITION_INFO;
+		disk->flags |= GENHD_FL_NO_PART_SCAN;
+	} else {
+		int ret;
 
-	blk_register_region(disk_devt(disk), disk->minors, NULL,
-			    exact_match, exact_lock, disk);
+		/* Register BDI before referencing it from bdev */
+		disk_to_dev(disk)->devt = devt;
+		ret = bdi_register_owner(disk->queue->backing_dev_info,
+						disk_to_dev(disk));
+		WARN_ON(ret);
+		blk_register_region(disk_devt(disk), disk->minors, NULL,
+				    exact_match, exact_lock, disk);
+	}
 	register_disk(parent, disk);
-	blk_register_queue(disk);
+	if (register_queue)
+		blk_register_queue(disk);
 
 	/*
 	 * Take an extra ref on queue which will be put on disk_release()
@@ -695,14 +713,13 @@ void device_add_disk(struct device *parent, struct gendisk *disk)
 	 */
 	WARN_ON_ONCE(!blk_get_queue(disk->queue));
 
-	if (!retval) {
-		retval = sysfs_create_link(&disk_to_dev(disk)->kobj,
-				&bdi->dev->kobj, "bdi");
-		WARN_ON(retval);
-	}
-
 	disk_add_events(disk);
 	blk_integrity_add(disk);
+}
+
+void device_add_disk(struct device *parent, struct gendisk *disk)
+{
+	__device_add_disk(parent, disk, true);
 }
 EXPORT_SYMBOL(device_add_disk);
 
@@ -729,7 +746,8 @@ void del_gendisk(struct gendisk *disk)
 	set_capacity(disk, 0);
 	disk->flags &= ~GENHD_FL_UP;
 
-	sysfs_remove_link(&disk_to_dev(disk)->kobj, "bdi");
+	if (!(disk->flags & GENHD_FL_HIDDEN))
+		sysfs_remove_link(&disk_to_dev(disk)->kobj, "bdi");
 	if (disk->queue) {
 		/*
 		 * Unregister bdi before releasing device numbers (as they can
@@ -740,13 +758,15 @@ void del_gendisk(struct gendisk *disk)
 	} else {
 		WARN_ON(1);
 	}
-	blk_unregister_region(disk_devt(disk), disk->minors);
+
+	if (!(disk->flags & GENHD_FL_HIDDEN)) {
+		blk_unregister_region(disk_devt(disk), disk->minors);
+		kobject_put(disk->part0.holder_dir);
+		kobject_put(disk->slave_dir);
+	}
 
 	part_stat_set_all(&disk->part0, 0);
 	disk->part0.stamp = 0;
-
-	kobject_put(disk->part0.holder_dir);
-	kobject_put(disk->slave_dir);
 	if (!sysfs_deprecated)
 		sysfs_remove_link(block_depr, dev_name(disk_to_dev(disk)));
 	pm_runtime_set_memalloc_noio(disk_to_dev(disk), false);
@@ -809,6 +829,10 @@ struct gendisk *get_gendisk(dev_t devt, int *partno)
 		spin_unlock_bh(&ext_devt_lock);
 	}
 
+	if (unlikely(disk->flags & GENHD_FL_HIDDEN)) {
+		put_disk(disk);
+		disk = NULL;
+	}
 	return disk;
 }
 EXPORT_SYMBOL(get_gendisk);
@@ -1052,6 +1076,15 @@ static ssize_t disk_removable_show(struct device *dev,
 		       (disk->flags & GENHD_FL_REMOVABLE ? 1 : 0));
 }
 
+static ssize_t disk_hidden_show(struct device *dev,
+				   struct device_attribute *attr, char *buf)
+{
+	struct gendisk *disk = dev_to_disk(dev);
+
+	return sprintf(buf, "%d\n",
+		       (disk->flags & GENHD_FL_HIDDEN ? 1 : 0));
+}
+
 static ssize_t disk_ro_show(struct device *dev,
 				   struct device_attribute *attr, char *buf)
 {
@@ -1089,6 +1122,7 @@ static ssize_t disk_discard_alignment_show(struct device *dev,
 static DEVICE_ATTR(range, 0444, disk_range_show, NULL);
 static DEVICE_ATTR(ext_range, 0444, disk_ext_range_show, NULL);
 static DEVICE_ATTR(removable, 0444, disk_removable_show, NULL);
+static DEVICE_ATTR(hidden, 0444, disk_hidden_show, NULL);
 static DEVICE_ATTR(ro, 0444, disk_ro_show, NULL);
 static DEVICE_ATTR(size, 0444, part_size_show, NULL);
 static DEVICE_ATTR(alignment_offset, 0444, disk_alignment_offset_show, NULL);
@@ -1110,6 +1144,7 @@ static struct attribute *disk_attrs[] = {
 	&dev_attr_range.attr,
 	&dev_attr_ext_range.attr,
 	&dev_attr_removable.attr,
+	&dev_attr_hidden.attr,
 	&dev_attr_ro.attr,
 	&dev_attr_size.attr,
 	&dev_attr_alignment_offset.attr,
