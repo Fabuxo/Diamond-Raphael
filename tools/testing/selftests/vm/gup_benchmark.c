@@ -22,7 +22,10 @@ struct gup_benchmark {
 	__u64 size;
 	__u32 nr_pages_per_call;
 	__u32 flags;
+<<<<<<< HEAD
 	__u64 expansion[10];	/* For future use */
+=======
+>>>>>>> 64c349f4ae787 (mm: add infrastructure for get_user_pages_fast() benchmarking)
 };
 
 int main(int argc, char **argv)
@@ -51,7 +54,10 @@ int main(int argc, char **argv)
 			break;
 		case 'w':
 			write = 1;
+<<<<<<< HEAD
 			break;
+=======
+>>>>>>> 64c349f4ae787 (mm: add infrastructure for get_user_pages_fast() benchmarking)
 		default:
 			return -1;
 		}
