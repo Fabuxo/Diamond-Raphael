@@ -27,27 +27,5 @@ static inline const struct dma_map_ops *get_arch_dma_ops(struct bus_type *bus)
 {
 	return &swiotlb_dma_map_ops;
 }
-
-static inline void dma_mark_clean(void *addr, size_t size) {}
-
-static inline void dma_cache_sync(struct device *dev, void *vaddr,
-		size_t size, enum dma_data_direction direction)
-{
-	unsigned long start = (unsigned long)vaddr;
-	unsigned long end   = start + size;
-
-	switch (direction) {
-	case DMA_NONE:
-		BUG();
-	case DMA_FROM_DEVICE:
-	case DMA_BIDIRECTIONAL:	/* writeback and invalidate */
-		__cpuc_dma_flush_range(start, end);
-		break;
-	case DMA_TO_DEVICE:		/* writeback only */
-		__cpuc_dma_clean_range(start, end);
-		break;
-	}
-}
-
 #endif /* __KERNEL__ */
 #endif
