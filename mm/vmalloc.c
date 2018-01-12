@@ -328,6 +328,9 @@ EXPORT_SYMBOL(vmalloc_to_pfn);
 #define DEBUG_AUGMENT_PROPAGATE_CHECK 0
 #define DEBUG_AUGMENT_LOWEST_MATCH_CHECK 0
 
+#define VM_LAZY_FREE	0x02
+#define VM_VM_AREA	0x04
+
 
 static DEFINE_SPINLOCK(vmap_area_lock);
 static DEFINE_SPINLOCK(free_vmap_area_lock);
@@ -3505,22 +3508,6 @@ static void show_numa_info(struct seq_file *m, struct vm_struct *v)
 	}
 }
 
-static void show_purge_info(struct seq_file *m)
-{
-	struct llist_node *head;
-	struct vmap_area *va;
-
-	head = READ_ONCE(vmap_purge_list.first);
-	if (head == NULL)
-		return;
-
-	llist_for_each_entry(va, head, purge_list) {
-		seq_printf(m, "0x%pK-0x%pK %7ld unpurged vm_area\n",
-			(void *)va->va_start, (void *)va->va_end,
-			va->va_end - va->va_start);
-	}
-}
-
 static int s_show(struct seq_file *m, void *p)
 {
 	struct vmap_area *va;
@@ -3585,14 +3572,25 @@ static const struct seq_operations vmalloc_op = {
 	.show = s_show,
 };
 
-static int __init proc_vmalloc_init(void)
+static int vmalloc_open(struct inode *inode, struct file *file)
 {
 	if (IS_ENABLED(CONFIG_NUMA))
-		proc_create_seq_private("vmallocinfo", 0400, NULL,
-				&vmalloc_op,
-				nr_node_ids * sizeof(unsigned int), NULL);
+		return seq_open_private(file, &vmalloc_op,
+					nr_node_ids * sizeof(unsigned int));
 	else
-		proc_create_seq("vmallocinfo", 0400, NULL, &vmalloc_op);
+		return seq_open(file, &vmalloc_op);
+}
+
+static const struct file_operations proc_vmalloc_operations = {
+	.open		= vmalloc_open,
+	.read		= seq_read,
+	.llseek		= seq_lseek,
+	.release	= seq_release_private,
+};
+
+static int __init proc_vmalloc_init(void)
+{
+	proc_create("vmallocinfo", 0400, NULL, &proc_vmalloc_operations);
 	return 0;
 }
 module_init(proc_vmalloc_init);
