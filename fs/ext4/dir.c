@@ -233,7 +233,7 @@ static int ext4_readdir(struct file *file, struct dir_context *ctx)
 		 * readdir(2), then we might be pointing to an invalid
 		 * dirent right now.  Scan from the start of the block
 		 * to make sure. */
-		if (file->f_version != inode->i_version) {
+		if (!inode_eq_iversion(inode, file->f_version)) {
 			for (i = 0; i < sb->s_blocksize && i < offset; ) {
 				de = (struct ext4_dir_entry_2 *)
 					(bh->b_data + i);
@@ -594,7 +594,11 @@ static int ext4_dx_readdir(struct file *file, struct dir_context *ctx)
 		 * cached entries.
 		 */
 		if ((!info->curr_node) ||
+<<<<<<< HEAD
 		    (file->f_version != inode->i_version)) {
+=======
+		    !inode_eq_iversion(inode, file->f_version)) {
+>>>>>>> c472c07bfed9 (iversion: Rename make inode_cmp_iversion{+raw} to inode_eq_iversion{+raw})
 			info->curr_node = NULL;
 			free_rb_tree_fname(&info->root);
 			file->f_version = inode->i_version;
