@@ -39,6 +39,7 @@
 #include <linux/bitops.h>
 #include <linux/init_task.h>
 #include <linux/uaccess.h>
+#include <linux/build_bug.h>
 
 #include "internal.h"
 #include "mount.h"
@@ -133,6 +134,7 @@ getname_flags(const char __user *filename, int flags, int *empty)
 	struct filename *result;
 	char *kname;
 	int len;
+	BUILD_BUG_ON(offsetof(struct filename, iname) % sizeof(long) != 0);
 
 	result = audit_reusename(filename);
 	if (result)
@@ -3544,9 +3546,7 @@ finish_open_created:
 		goto out;
 	*opened |= FILE_OPENED;
 opened:
-	error = open_check_o_direct(file);
-	if (!error)
-		error = ima_file_check(file, op->acc_mode, *opened);
+	error = ima_file_check(file, op->acc_mode, *opened);
 	if (!error && will_truncate)
 		error = handle_truncate(file);
 out:
@@ -3628,9 +3628,6 @@ static int do_tmpfile(struct nameidata *nd, unsigned flags,
 	error = finish_open(file, child, NULL, opened);
 	if (error)
 		goto out2;
-	error = open_check_o_direct(file);
-	if (error)
-		fput(file);
 out2:
 	mnt_drop_write(path.mnt);
 out:
