@@ -338,13 +338,13 @@ static int shmem_radix_tree_replace(struct address_space *mapping,
 
 	VM_BUG_ON(!expected);
 	VM_BUG_ON(!replacement);
-	item = __radix_tree_lookup(&mapping->page_tree, index, &node, &pslot);
+	item = __radix_tree_lookup(&mapping->i_pages, index, &node, &pslot);
 	if (!item)
 		return -ENOENT;
 	if (item != expected)
 		return -ENOENT;
-	__radix_tree_replace(&mapping->page_tree, node, pslot,
-			     replacement, NULL, NULL);
+	__radix_tree_replace(&mapping->i_pages, node, pslot,
+			     replacement, NULL);
 	return 0;
 }
 
@@ -361,7 +361,7 @@ static bool shmem_confirm_swap(struct address_space *mapping,
 	void *item;
 
 	rcu_read_lock();
-	item = radix_tree_lookup(&mapping->page_tree, index);
+	item = radix_tree_lookup(&mapping->i_pages, index);
 	rcu_read_unlock();
 	return item == swp_to_radix_entry(swap);
 }
@@ -601,14 +601,14 @@ static int shmem_add_to_page_cache(struct page *page,
 	page->mapping = mapping;
 	page->index = index;
 
-	spin_lock_irq(&mapping->tree_lock);
+	xa_lock_irq(&mapping->i_pages);
 	if (PageTransHuge(page)) {
 		void __rcu **results;
 		pgoff_t idx;
 		int i;
 
 		error = 0;
-		if (radix_tree_gang_lookup_slot(&mapping->page_tree,
+		if (radix_tree_gang_lookup_slot(&mapping->i_pages,
 					&results, &idx, index, 1) &&
 				idx < index + HPAGE_PMD_NR) {
 			error = -EEXIST;
@@ -616,14 +616,14 @@ static int shmem_add_to_page_cache(struct page *page,
 
 		if (!error) {
 			for (i = 0; i < HPAGE_PMD_NR; i++) {
-				error = radix_tree_insert(&mapping->page_tree,
+				error = radix_tree_insert(&mapping->i_pages,
 						index + i, page + i);
 				VM_BUG_ON(error);
 			}
 			count_vm_event(THP_FILE_ALLOC);
 		}
 	} else if (!expected) {
-		error = radix_tree_insert(&mapping->page_tree, index, page);
+		error = radix_tree_insert(&mapping->i_pages, index, page);
 	} else {
 		error = shmem_radix_tree_replace(mapping, index, expected,
 								 page);
@@ -635,10 +635,10 @@ static int shmem_add_to_page_cache(struct page *page,
 			__inc_node_page_state(page, NR_SHMEM_THPS);
 		__mod_node_page_state(page_pgdat(page), NR_FILE_PAGES, nr);
 		__mod_node_page_state(page_pgdat(page), NR_SHMEM, nr);
-		spin_unlock_irq(&mapping->tree_lock);
+		xa_unlock_irq(&mapping->i_pages);
 	} else {
 		page->mapping = NULL;
-		spin_unlock_irq(&mapping->tree_lock);
+		xa_unlock_irq(&mapping->i_pages);
 		page_ref_sub(page, nr);
 	}
 	return error;
@@ -654,13 +654,13 @@ static void shmem_delete_from_page_cache(struct page *page, void *radswap)
 
 	VM_BUG_ON_PAGE(PageCompound(page), page);
 
-	spin_lock_irq(&mapping->tree_lock);
+	xa_lock_irq(&mapping->i_pages);
 	error = shmem_radix_tree_replace(mapping, page->index, page, radswap);
 	page->mapping = NULL;
 	mapping->nrpages--;
 	__dec_node_page_state(page, NR_FILE_PAGES);
 	__dec_node_page_state(page, NR_SHMEM);
-	spin_unlock_irq(&mapping->tree_lock);
+	xa_unlock_irq(&mapping->i_pages);
 	put_page(page);
 	BUG_ON(error);
 }
@@ -673,9 +673,9 @@ static int shmem_free_swap(struct address_space *mapping,
 {
 	void *old;
 
-	spin_lock_irq(&mapping->tree_lock);
-	old = radix_tree_delete_item(&mapping->page_tree, index, radswap);
-	spin_unlock_irq(&mapping->tree_lock);
+	xa_lock_irq(&mapping->i_pages);
+	old = radix_tree_delete_item(&mapping->i_pages, index, radswap);
+	xa_unlock_irq(&mapping->i_pages);
 	if (old != radswap)
 		return -ENOENT;
 	free_swap_and_cache(radix_to_swp_entry(radswap));
@@ -686,7 +686,7 @@ static int shmem_free_swap(struct address_space *mapping,
  * Determine (in bytes) how many of the shmem object's pages mapped by the
  * given offsets are swapped out.
  *
- * This is safe to call without i_mutex or mapping->tree_lock thanks to RCU,
+ * This is safe to call without i_mutex or the i_pages lock thanks to RCU,
  * as long as the inode doesn't go away and racy results are not a problem.
  */
 unsigned long shmem_partial_swap_usage(struct address_space *mapping,
@@ -699,7 +699,7 @@ unsigned long shmem_partial_swap_usage(struct address_space *mapping,
 
 	rcu_read_lock();
 
-	radix_tree_for_each_slot(slot, &mapping->page_tree, &iter, start) {
+	radix_tree_for_each_slot(slot, &mapping->i_pages, &iter, start) {
 		if (iter.index >= end)
 			break;
 
@@ -728,7 +728,7 @@ unsigned long shmem_partial_swap_usage(struct address_space *mapping,
  * Determine (in bytes) how many of the shmem object's pages mapped by the
  * given vma is swapped out.
  *
- * This is safe to call without i_mutex or mapping->tree_lock thanks to RCU,
+ * This is safe to call without i_mutex or the i_pages lock thanks to RCU,
  * as long as the inode doesn't go away and racy results are not a problem.
  */
 unsigned long shmem_swap_usage(struct vm_area_struct *vma)
@@ -1143,7 +1143,7 @@ static int shmem_unuse_inode(struct shmem_inode_info *info,
 	int error = 0;
 
 	radswap = swp_to_radix_entry(swap);
-	index = find_swap_entry(&mapping->page_tree, radswap);
+	index = find_swap_entry(&mapping->i_pages, radswap);
 	if (index == -1)
 		return -EAGAIN;	/* tell shmem_unuse we found nothing */
 
@@ -1459,7 +1459,7 @@ static struct page *shmem_alloc_hugepage(gfp_t gfp,
 
 	hindex = round_down(index, HPAGE_PMD_NR);
 	rcu_read_lock();
-	if (radix_tree_gang_lookup_slot(&mapping->page_tree, &results, &idx,
+	if (radix_tree_gang_lookup_slot(&mapping->i_pages, &results, &idx,
 				hindex, 1) && idx < hindex + HPAGE_PMD_NR) {
 		rcu_read_unlock();
 		return NULL;
@@ -1574,14 +1574,14 @@ static int shmem_replace_page(struct page **pagep, gfp_t gfp,
 	 * Our caller will very soon move newpage out of swapcache, but it's
 	 * a nice clean interface for us to replace oldpage by newpage there.
 	 */
-	spin_lock_irq(&swap_mapping->tree_lock);
+	xa_lock_irq(&swap_mapping->i_pages);
 	error = shmem_radix_tree_replace(swap_mapping, swap_index, oldpage,
 								   newpage);
 	if (!error) {
 		__inc_node_page_state(newpage, NR_FILE_PAGES);
 		__dec_node_page_state(oldpage, NR_FILE_PAGES);
 	}
-	spin_unlock_irq(&swap_mapping->tree_lock);
+	xa_unlock_irq(&swap_mapping->i_pages);
 
 	if (unlikely(error)) {
 		/*
@@ -2686,231 +2686,6 @@ static loff_t shmem_file_llseek(struct file *file, loff_t offset, int whence)
 		offset = vfs_setpos(file, offset, MAX_LFS_FILESIZE);
 	inode_unlock(inode);
 	return offset;
-}
-
-/*
- * We need a tag: a new tag would expand every radix_tree_node by 8 bytes,
- * so reuse a tag which we firmly believe is never set or cleared on shmem.
- */
-#define SHMEM_TAG_PINNED        PAGECACHE_TAG_TOWRITE
-#define LAST_SCAN               4       /* about 150ms max */
-
-static void shmem_tag_pins(struct address_space *mapping)
-{
-	struct radix_tree_iter iter;
-	void **slot;
-	pgoff_t start;
-	struct page *page;
-	unsigned int tagged = 0;
-
-	lru_add_drain();
-	start = 0;
-
-	spin_lock_irq(&mapping->tree_lock);
-	radix_tree_for_each_slot(slot, &mapping->page_tree, &iter, start) {
-		page = radix_tree_deref_slot_protected(slot, &mapping->tree_lock);
-		if (!page || radix_tree_exception(page)) {
-			if (radix_tree_deref_retry(page)) {
-				slot = radix_tree_iter_retry(&iter);
-				continue;
-			}
-		} else if (!PageTail(page) && page_count(page) !=
-			   hpage_nr_pages(page) + total_mapcount(page)) {
-			radix_tree_tag_set(&mapping->page_tree, iter.index,
-					   SHMEM_TAG_PINNED);
-		}
-
-		if (++tagged % 1024)
-			continue;
-
-		slot = radix_tree_iter_resume(slot, &iter);
-		spin_unlock_irq(&mapping->tree_lock);
-		cond_resched();
-		spin_lock_irq(&mapping->tree_lock);
-	}
-	spin_unlock_irq(&mapping->tree_lock);
-}
-
-/*
- * Setting SEAL_WRITE requires us to verify there's no pending writer. However,
- * via get_user_pages(), drivers might have some pending I/O without any active
- * user-space mappings (eg., direct-IO, AIO). Therefore, we look at all pages
- * and see whether it has an elevated ref-count. If so, we tag them and wait for
- * them to be dropped.
- * The caller must guarantee that no new user will acquire writable references
- * to those pages to avoid races.
- */
-static int shmem_wait_for_pins(struct address_space *mapping)
-{
-	struct radix_tree_iter iter;
-	void **slot;
-	pgoff_t start;
-	struct page *page;
-	int error, scan;
-
-	shmem_tag_pins(mapping);
-
-	error = 0;
-	for (scan = 0; scan <= LAST_SCAN; scan++) {
-		if (!radix_tree_tagged(&mapping->page_tree, SHMEM_TAG_PINNED))
-			break;
-
-		if (!scan)
-			lru_add_drain_all();
-		else if (schedule_timeout_killable((HZ << scan) / 200))
-			scan = LAST_SCAN;
-
-		start = 0;
-		rcu_read_lock();
-		radix_tree_for_each_tagged(slot, &mapping->page_tree, &iter,
-					   start, SHMEM_TAG_PINNED) {
-
-			page = radix_tree_deref_slot(slot);
-			if (radix_tree_exception(page)) {
-				if (radix_tree_deref_retry(page)) {
-					slot = radix_tree_iter_retry(&iter);
-					continue;
-				}
-
-				page = NULL;
-			}
-
-			if (page && page_count(page) !=
-			    hpage_nr_pages(page) + total_mapcount(page)) {
-				if (scan < LAST_SCAN)
-					goto continue_resched;
-
-				/*
-				 * On the last scan, we clean up all those tags
-				 * we inserted; but make a note that we still
-				 * found pages pinned.
-				 */
-				error = -EBUSY;
-			}
-
-			spin_lock_irq(&mapping->tree_lock);
-			radix_tree_tag_clear(&mapping->page_tree,
-					     iter.index, SHMEM_TAG_PINNED);
-			spin_unlock_irq(&mapping->tree_lock);
-continue_resched:
-			if (need_resched()) {
-				slot = radix_tree_iter_resume(slot, &iter);
-				cond_resched_rcu();
-			}
-		}
-		rcu_read_unlock();
-	}
-
-	return error;
-}
-
-#define F_ALL_SEALS (F_SEAL_SEAL | \
-		     F_SEAL_SHRINK | \
-		     F_SEAL_GROW | \
-		     F_SEAL_WRITE | \
-		     F_SEAL_FUTURE_WRITE)
-
-int shmem_add_seals(struct file *file, unsigned int seals)
-{
-	struct inode *inode = file_inode(file);
-	struct shmem_inode_info *info = SHMEM_I(inode);
-	int error;
-
-	/*
-	 * SEALING
-	 * Sealing allows multiple parties to share a shmem-file but restrict
-	 * access to a specific subset of file operations. Seals can only be
-	 * added, but never removed. This way, mutually untrusted parties can
-	 * share common memory regions with a well-defined policy. A malicious
-	 * peer can thus never perform unwanted operations on a shared object.
-	 *
-	 * Seals are only supported on special shmem-files and always affect
-	 * the whole underlying inode. Once a seal is set, it may prevent some
-	 * kinds of access to the file. Currently, the following seals are
-	 * defined:
-	 *   SEAL_SEAL: Prevent further seals from being set on this file
-	 *   SEAL_SHRINK: Prevent the file from shrinking
-	 *   SEAL_GROW: Prevent the file from growing
-	 *   SEAL_WRITE: Prevent write access to the file
-	 *
-	 * As we don't require any trust relationship between two parties, we
-	 * must prevent seals from being removed. Therefore, sealing a file
-	 * only adds a given set of seals to the file, it never touches
-	 * existing seals. Furthermore, the "setting seals"-operation can be
-	 * sealed itself, which basically prevents any further seal from being
-	 * added.
-	 *
-	 * Semantics of sealing are only defined on volatile files. Only
-	 * anonymous shmem files support sealing. More importantly, seals are
-	 * never written to disk. Therefore, there's no plan to support it on
-	 * other file types.
-	 */
-
-	if (file->f_op != &shmem_file_operations)
-		return -EINVAL;
-	if (!(file->f_mode & FMODE_WRITE))
-		return -EPERM;
-	if (seals & ~(unsigned int)F_ALL_SEALS)
-		return -EINVAL;
-
-	inode_lock(inode);
-
-	if (info->seals & F_SEAL_SEAL) {
-		error = -EPERM;
-		goto unlock;
-	}
-
-	if ((seals & F_SEAL_WRITE) && !(info->seals & F_SEAL_WRITE)) {
-		error = mapping_deny_writable(file->f_mapping);
-		if (error)
-			goto unlock;
-
-		error = shmem_wait_for_pins(file->f_mapping);
-		if (error) {
-			mapping_allow_writable(file->f_mapping);
-			goto unlock;
-		}
-	}
-
-	info->seals |= seals;
-	error = 0;
-
-unlock:
-	inode_unlock(inode);
-	return error;
-}
-EXPORT_SYMBOL_GPL(shmem_add_seals);
-
-int shmem_get_seals(struct file *file)
-{
-	if (file->f_op != &shmem_file_operations)
-		return -EINVAL;
-
-	return SHMEM_I(file_inode(file))->seals;
-}
-EXPORT_SYMBOL_GPL(shmem_get_seals);
-
-long shmem_fcntl(struct file *file, unsigned int cmd, unsigned long arg)
-{
-	long error;
-
-	switch (cmd) {
-	case F_ADD_SEALS:
-		/* disallow upper 32bit */
-		if (arg > UINT_MAX)
-			return -EINVAL;
-
-		error = shmem_add_seals(file, arg);
-		break;
-	case F_GET_SEALS:
-		error = shmem_get_seals(file);
-		break;
-	default:
-		error = -EINVAL;
-		break;
-	}
-
-	return error;
 }
 
 static long shmem_fallocate(struct file *file, int mode, loff_t offset,
