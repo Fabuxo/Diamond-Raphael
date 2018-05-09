@@ -129,3 +129,4 @@ obj-$(CONFIG_SUBSYS_BACKUP) += subsys_backup.o
 CFLAGS_rpm_stats.o += -DCONFIG_DEBUG_FS
 CFLAGS_rpm_master_stat.o += -DCONFIG_DEBUG_FS
 CFLAGS_rpmh_master_stat.o += -DCONFIG_DEBUG_FS
+obj-$(CONFIG_QCOM_APR) += apr.o

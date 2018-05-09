@@ -1108,6 +1108,15 @@ config SUBSYS_BACKUP
 	  This driver implements the QMI interface and responds to the backup
 	  and restore requests from the remote subsystem.
 
+config QCOM_APR
+	tristate "Qualcomm APR Bus (Asynchronous Packet Router)"
+	depends on ARCH_QCOM
+	depends on RPMSG
+	help
+          Enable APR IPC protocol support between
+          application processor and QDSP6. APR is
+          used by audio driver to configure QDSP6
+          ASM, ADM and AFE modules.
 endmenu
 
 config QCOM_HYP_CORE_CTL
