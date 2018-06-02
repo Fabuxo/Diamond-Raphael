@@ -66,6 +66,7 @@ struct old_linux_dirent;
 struct perf_event_attr;
 struct file_handle;
 struct sigaltstack;
+struct rseq;
 union bpf_attr;
 
 #include <linux/types.h>
@@ -543,6 +544,148 @@ asmlinkage long sys_io_submit(aio_context_t, long,
 				struct iocb __user * __user *);
 asmlinkage long sys_io_cancel(aio_context_t ctx_id, struct iocb __user *iocb,
 			      struct io_event __user *result);
+			      
+#ifdef CONFIG_CLONE_BACKWARDS
+asmlinkage long sys_clone(unsigned long, unsigned long, int __user *, unsigned long,
+	       int __user *);
+#else
+#ifdef CONFIG_CLONE_BACKWARDS3
+asmlinkage long sys_clone(unsigned long, unsigned long, int, int __user *,
+			  int __user *, unsigned long);
+#else
+asmlinkage long sys_clone(unsigned long, unsigned long, int __user *,
+	       int __user *, unsigned long);
+#endif
+#endif
+asmlinkage long sys_execve(const char __user *filename,
+		const char __user *const __user *argv,
+		const char __user *const __user *envp);
+
+/* mm/fadvise.c */
+asmlinkage long sys_fadvise64_64(int fd, loff_t offset, loff_t len, int advice);
+
+/* mm/, CONFIG_MMU only */
+asmlinkage long sys_swapon(const char __user *specialfile, int swap_flags);
+asmlinkage long sys_swapoff(const char __user *specialfile);
+asmlinkage long sys_mprotect(unsigned long start, size_t len,
+				unsigned long prot);
+asmlinkage long sys_msync(unsigned long start, size_t len, int flags);
+asmlinkage long sys_mlock(unsigned long start, size_t len);
+asmlinkage long sys_munlock(unsigned long start, size_t len);
+asmlinkage long sys_mlockall(int flags);
+asmlinkage long sys_munlockall(void);
+asmlinkage long sys_mincore(unsigned long start, size_t len,
+				unsigned char __user * vec);
+asmlinkage long sys_madvise(unsigned long start, size_t len, int behavior);
+asmlinkage long sys_remap_file_pages(unsigned long start, unsigned long size,
+			unsigned long prot, unsigned long pgoff,
+			unsigned long flags);
+asmlinkage long sys_mbind(unsigned long start, unsigned long len,
+				unsigned long mode,
+				const unsigned long __user *nmask,
+				unsigned long maxnode,
+				unsigned flags);
+asmlinkage long sys_get_mempolicy(int __user *policy,
+				unsigned long __user *nmask,
+				unsigned long maxnode,
+				unsigned long addr, unsigned long flags);
+asmlinkage long sys_set_mempolicy(int mode, const unsigned long __user *nmask,
+				unsigned long maxnode);
+asmlinkage long sys_migrate_pages(pid_t pid, unsigned long maxnode,
+				const unsigned long __user *from,
+				const unsigned long __user *to);
+asmlinkage long sys_move_pages(pid_t pid, unsigned long nr_pages,
+				const void __user * __user *pages,
+				const int __user *nodes,
+				int __user *status,
+				int flags);
+
+asmlinkage long sys_rt_tgsigqueueinfo(pid_t tgid, pid_t  pid, int sig,
+		siginfo_t __user *uinfo);
+asmlinkage long sys_perf_event_open(
+		struct perf_event_attr __user *attr_uptr,
+		pid_t pid, int cpu, int group_fd, unsigned long flags);
+asmlinkage long sys_accept4(int, struct sockaddr __user *, int __user *, int);
+asmlinkage long sys_recvmmsg(int fd, struct mmsghdr __user *msg,
+			     unsigned int vlen, unsigned flags,
+			     struct timespec __user *timeout);
+
+asmlinkage long sys_wait4(pid_t pid, int __user *stat_addr,
+				int options, struct rusage __user *ru);
+asmlinkage long sys_prlimit64(pid_t pid, unsigned int resource,
+				const struct rlimit64 __user *new_rlim,
+				struct rlimit64 __user *old_rlim);
+asmlinkage long sys_fanotify_init(unsigned int flags, unsigned int event_f_flags);
+asmlinkage long sys_fanotify_mark(int fanotify_fd, unsigned int flags,
+				  u64 mask, int fd,
+				  const char  __user *pathname);
+asmlinkage long sys_name_to_handle_at(int dfd, const char __user *name,
+				      struct file_handle __user *handle,
+				      int __user *mnt_id, int flag);
+asmlinkage long sys_open_by_handle_at(int mountdirfd,
+				      struct file_handle __user *handle,
+				      int flags);
+asmlinkage long sys_clock_adjtime(clockid_t which_clock,
+				struct timex __user *tx);
+asmlinkage long sys_syncfs(int fd);
+asmlinkage long sys_setns(int fd, int nstype);
+asmlinkage long sys_sendmmsg(int fd, struct mmsghdr __user *msg,
+			     unsigned int vlen, unsigned flags);
+asmlinkage long sys_process_vm_readv(pid_t pid,
+				     const struct iovec __user *lvec,
+				     unsigned long liovcnt,
+				     const struct iovec __user *rvec,
+				     unsigned long riovcnt,
+				     unsigned long flags);
+asmlinkage long sys_process_vm_writev(pid_t pid,
+				      const struct iovec __user *lvec,
+				      unsigned long liovcnt,
+				      const struct iovec __user *rvec,
+				      unsigned long riovcnt,
+				      unsigned long flags);
+asmlinkage long sys_kcmp(pid_t pid1, pid_t pid2, int type,
+			 unsigned long idx1, unsigned long idx2);
+asmlinkage long sys_finit_module(int fd, const char __user *uargs, int flags);
+asmlinkage long sys_sched_setattr(pid_t pid,
+					struct sched_attr __user *attr,
+					unsigned int flags);
+asmlinkage long sys_sched_getattr(pid_t pid,
+					struct sched_attr __user *attr,
+					unsigned int size,
+					unsigned int flags);
+asmlinkage long sys_renameat2(int olddfd, const char __user *oldname,
+			      int newdfd, const char __user *newname,
+			      unsigned int flags);
+asmlinkage long sys_seccomp(unsigned int op, unsigned int flags,
+			    const char __user *uargs);
+asmlinkage long sys_getrandom(char __user *buf, size_t count,
+			      unsigned int flags);
+asmlinkage long sys_memfd_create(const char __user *uname_ptr, unsigned int flags);
+asmlinkage long sys_bpf(int cmd, union bpf_attr *attr, unsigned int size);
+asmlinkage long sys_execveat(int dfd, const char __user *filename,
+			const char __user *const __user *argv,
+			const char __user *const __user *envp, int flags);
+asmlinkage long sys_userfaultfd(int flags);
+asmlinkage long sys_membarrier(int cmd, int flags);
+asmlinkage long sys_mlock2(unsigned long start, size_t len, int flags);
+asmlinkage long sys_copy_file_range(int fd_in, loff_t __user *off_in,
+				    int fd_out, loff_t __user *off_out,
+				    size_t len, unsigned int flags);
+asmlinkage long sys_preadv2(unsigned long fd, const struct iovec __user *vec,
+			    unsigned long vlen, unsigned long pos_l, unsigned long pos_h,
+			    rwf_t flags);
+asmlinkage long sys_pwritev2(unsigned long fd, const struct iovec __user *vec,
+			    unsigned long vlen, unsigned long pos_l, unsigned long pos_h,
+			    rwf_t flags);
+asmlinkage long sys_pkey_mprotect(unsigned long start, size_t len,
+				  unsigned long prot, int pkey);
+asmlinkage long sys_pkey_alloc(unsigned long flags, unsigned long init_val);
+asmlinkage long sys_pkey_free(int pkey);
+asmlinkage long sys_statx(int dfd, const char __user *path, unsigned flags,
+			  unsigned mask, struct statx __user *buffer);
+asmlinkage long sys_rseq(struct rseq __user *rseq, uint32_t rseq_len,
+			 int flags, uint32_t sig);
+			 
 asmlinkage long sys_sendfile(int out_fd, int in_fd,
 			     off_t __user *offset, size_t count);
 asmlinkage long sys_sendfile64(int out_fd, int in_fd,
