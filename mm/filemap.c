@@ -2491,7 +2491,7 @@ static struct file *do_async_mmap_readahead(struct vm_fault *vmf,
  *
  * We never return with VM_FAULT_RETRY and a bit from VM_FAULT_ERROR set.
  */
-int filemap_fault(struct vm_fault *vmf)
+vm_fault_t filemap_fault(struct vm_fault *vmf)
 {
 	int error;
 	struct file *file = vmf->vma->vm_file;
@@ -2502,7 +2502,7 @@ int filemap_fault(struct vm_fault *vmf)
 	pgoff_t offset = vmf->pgoff;
 	pgoff_t max_off;
 	struct page *page;
-	int ret = 0;
+	vm_fault_t ret = 0;
 
 	if (vmf->flags & FAULT_FLAG_SPECULATIVE) {
 		page = find_get_page(mapping, offset);
@@ -2755,11 +2755,11 @@ next:
 }
 EXPORT_SYMBOL(filemap_map_pages);
 
-int filemap_page_mkwrite(struct vm_fault *vmf)
+vm_fault_t filemap_page_mkwrite(struct vm_fault *vmf)
 {
 	struct page *page = vmf->page;
 	struct inode *inode = file_inode(vmf->vma->vm_file);
-	int ret = VM_FAULT_LOCKED;
+	vm_fault_t ret = VM_FAULT_LOCKED;
 
 	sb_start_pagefault(inode->i_sb);
 	file_update_time(vmf->vma->vm_file);
