@@ -5041,6 +5041,12 @@ static int init_one(struct pci_dev *pdev, const struct pci_device_id *ent)
 		adapter->params.offload = 0;
 	}
 
+	adapter->mps_encap = kvcalloc(adapter->params.arch.mps_tcam_size,
+				      sizeof(struct mps_encap_entry),
+				      GFP_KERNEL);
+	if (!adapter->mps_encap)
+		dev_warn(&pdev->dev, "could not allocate MPS Encap entries, continuing\n");
+
 #if IS_ENABLED(CONFIG_IPV6)
 	if ((CHELSIO_CHIP_VERSION(adapter->params.chip) <= CHELSIO_T5) &&
 	    (!(t4_read_reg(adapter, LE_DB_CONFIG_A) & ASLIPCOMPEN_F))) {
