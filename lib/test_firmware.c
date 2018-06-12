@@ -645,8 +645,7 @@ static ssize_t trigger_batched_requests_store(struct device *dev,
                 goto out_bail;
         }
 
-	test_fw_config->reqs = vzalloc(sizeof(struct test_batched_req) *
-				       test_fw_config->num_requests * 2);
+	test_fw_config->reqs = vzalloc(array3_size(sizeof(struct test_batched_req), test_fw_config->num_requests, 2));
 	if (!test_fw_config->reqs) {
 		rc = -ENOMEM;
 		goto out_unlock;
@@ -747,17 +746,9 @@ ssize_t trigger_batched_requests_async_store(struct device *dev,
 
 	mutex_lock(&test_fw_mutex);
 
-<<<<<<< HEAD
-	test_fw_config->reqs = vzalloc(array3_size(sizeof(struct test_batched_req), test_fw_config->num_requests, 2));
-=======
-        if (test_fw_config->reqs) {
-                rc = -EBUSY;
-                goto out_bail;
-        }
-
-	test_fw_config->reqs = vzalloc(sizeof(struct test_batched_req) *
-				       test_fw_config->num_requests * 2);
->>>>>>> 6fcfceae441d (Merge tag 'v4.14.323' into 13.0)
+	test_fw_config->reqs =
+		vzalloc(array3_size(sizeof(struct test_batched_req),
+				    test_fw_config->num_requests, 2));
 	if (!test_fw_config->reqs) {
 		rc = -ENOMEM;
 		goto out;
