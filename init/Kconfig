@@ -1956,13 +1956,9 @@ config PROFILING
 config TRACEPOINTS
 	bool
 
-source "arch/Kconfig"
-
 endmenu		# General setup
 
-config HAVE_GENERIC_DMA_COHERENT
-	bool
-	default n
+source "arch/Kconfig"
 
 config SLABINFO
 	bool
