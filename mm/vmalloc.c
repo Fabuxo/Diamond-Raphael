@@ -3505,22 +3505,6 @@ static void show_numa_info(struct seq_file *m, struct vm_struct *v)
 	}
 }
 
-static void show_purge_info(struct seq_file *m)
-{
-	struct llist_node *head;
-	struct vmap_area *va;
-
-	head = READ_ONCE(vmap_purge_list.first);
-	if (head == NULL)
-		return;
-
-	llist_for_each_entry(va, head, purge_list) {
-		seq_printf(m, "0x%pK-0x%pK %7ld unpurged vm_area\n",
-			(void *)va->va_start, (void *)va->va_end,
-			va->va_end - va->va_start);
-	}
-}
-
 static int s_show(struct seq_file *m, void *p)
 {
 	struct vmap_area *va;
@@ -3574,16 +3558,6 @@ static int s_show(struct seq_file *m, void *p)
 
 	show_numa_info(m, v);
 	seq_putc(m, '\n');
-
-	/*
-	 * As a final step, dump "unpurged" areas. Note,
-	 * that entire "/proc/vmallocinfo" output will not
-	 * be address sorted, because the purge list is not
-	 * sorted.
-	 */
-	if (list_is_last(&va->list, &vmap_area_list))
-		show_purge_info(m);
-
 	return 0;
 }
 
@@ -3612,7 +3586,7 @@ static const struct file_operations proc_vmalloc_operations = {
 
 static int __init proc_vmalloc_init(void)
 {
-	proc_create("vmallocinfo", S_IRUSR, NULL, &proc_vmalloc_operations);
+	proc_create("vmallocinfo", 0400, NULL, &proc_vmalloc_operations);
 	return 0;
 }
 module_init(proc_vmalloc_init);
