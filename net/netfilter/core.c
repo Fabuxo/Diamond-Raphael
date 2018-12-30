@@ -56,7 +56,7 @@ void nf_unregister_afinfo(const struct nf_afinfo *afinfo)
 }
 EXPORT_SYMBOL_GPL(nf_unregister_afinfo);
 
-#ifdef HAVE_JUMP_LABEL
+#ifdef CONFIG_JUMP_LABEL
 struct static_key nf_hooks_needed[NFPROTO_NUMPROTO][NF_MAX_HOOKS];
 EXPORT_SYMBOL(nf_hooks_needed);
 #endif
@@ -289,7 +289,8 @@ int nf_register_net_hook(struct net *net, const struct nf_hook_ops *reg)
 	if (reg->pf == NFPROTO_NETDEV && reg->hooknum == NF_NETDEV_INGRESS)
 		net_inc_ingress_queue();
 #endif
-#ifdef HAVE_JUMP_LABEL
+
+#ifdef CONFIG_JUMP_LABEL
 	static_key_slow_inc(&nf_hooks_needed[reg->pf][reg->hooknum]);
 #endif
 	synchronize_net();
@@ -357,6 +358,18 @@ void nf_unregister_net_hook(struct net *net, const struct nf_hook_ops *reg)
 	}
 
 	__nf_unregister_net_hook(p, reg);
+
+	if (nf_remove_net_hook(p, reg)) {
+#ifdef CONFIG_NETFILTER_INGRESS
+		if (pf == NFPROTO_NETDEV && reg->hooknum == NF_NETDEV_INGRESS)
+			net_dec_ingress_queue();
+#endif
+#ifdef CONFIG_JUMP_LABEL
+		static_key_slow_dec(&nf_hooks_needed[pf][reg->hooknum]);
+#endif
+	} else {
+		WARN_ONCE(1, "hook not found, pf %d num %d", pf, reg->hooknum);
+	}
 
 	p = __nf_hook_entries_try_shrink(pp);
 	mutex_unlock(&nf_hook_mutex);

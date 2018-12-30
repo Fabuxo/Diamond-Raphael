@@ -836,7 +836,7 @@ EXPORT_SYMBOL(arch_free_page);
 #endif /* CONFIG_PPC_STD_MMU_64 */
 
 #ifdef CONFIG_TRACEPOINTS
-#ifdef HAVE_JUMP_LABEL
+#ifdef CONFIG_JUMP_LABEL
 struct static_key hcall_tracepoint_key = STATIC_KEY_INIT;
 
 int hcall_tracepoint_regfunc(void)
