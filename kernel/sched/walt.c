@@ -2323,6 +2323,7 @@ void update_cluster_topology(void)
 {
 	struct cpumask cpus = *cpu_possible_mask;
 	const struct cpumask *cluster_cpus;
+	struct sched_cluster *cluster;
 	struct list_head new_head;
 	int i;
 
@@ -2347,6 +2348,15 @@ void update_cluster_topology(void)
 	 */
 	move_list(&cluster_head, &new_head, false);
 	update_all_clusters_stats();
+
+	for_each_sched_cluster(cluster) {
+		if (cpumask_weight(&cluster->cpus) == 1)
+			cpumask_or(&asym_cap_sibling_cpus,
+				   &asym_cap_sibling_cpus, &cluster->cpus);
+	}
+
+	if (cpumask_weight(&asym_cap_sibling_cpus) == 1)
+		cpumask_clear(&asym_cap_sibling_cpus);
 }
 
 struct sched_cluster init_cluster = {
