@@ -571,6 +571,16 @@ config PSI_FTRACE
 	  If set, PSI ftrace events may be
 	  enabled.
 
+config PSI_FTRACE
+	bool "Insert debug hooks for PSI ftrace events"
+	default n
+	depends on PSI
+	help
+	  If not set, PSI ftrace events will be disabled and
+	  will not incur any performance penalty.
+	  If set, PSI ftrace events may be
+	  enabled.
+
 endmenu # "CPU/Task time and stats accounting"
 
 config CPU_ISOLATION
