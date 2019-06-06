@@ -830,8 +830,17 @@ config SPECULATIVE_PAGE_FAULT
 	 allocating, it is failing its processing and a classic page fault
 	 is then tried.
 
-config HAVE_LOW_MEMORY_KILLER
-	bool "Have user/kernel space low memory killer"
+config HAVE_USERSPACE_LOW_MEMORY_KILLER
+	bool "Have userspace low memory killer"
+	default n
+	help
+	  The page allocator cannot directly call into a
+	  userspace low memory killer as it can call into the OOM killer.
+	  Therefore, add a timeout mechanism to give the userspace
+	  low memory killer a chance to run.
+
+config GUP_BENCHMARK
+	bool "Enable infrastructure for get_user_pages_fast() benchmarking"
 	default n
 	help
 	  Say 'y' if you have a user/kernel low memory killer and thus you
