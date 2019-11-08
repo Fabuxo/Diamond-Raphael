@@ -2187,11 +2187,47 @@ static inline void walt_update_group_thresholds(void)
 			pct_to_min_scaled(sysctl_sched_group_downmigrate_pct);
 }
 
-DECLARE_BITMAP(all_cluster_ids, NR_CPUS);
+static void walt_cpus_capacity_changed(const cpumask_t *cpus)
+{
+	unsigned long flags;
+
+	acquire_rq_locks_irqsave(cpu_possible_mask, &flags);
+
+	if (cpumask_intersects(cpus, &sched_cluster[0]->cpus))
+		walt_update_group_thresholds();
+
+	release_rq_locks_irqrestore(cpu_possible_mask, &flags);
+}
+
+
 struct sched_cluster *sched_cluster[NR_CPUS];
 static int num_sched_clusters;
 
 struct list_head cluster_head;
+
+static struct sched_cluster init_cluster = {
+	.list			=	LIST_HEAD_INIT(init_cluster.list),
+	.id			=	0,
+	.max_power_cost		=	1,
+	.min_power_cost		=	1,
+	.max_possible_capacity	=	1024,
+	.efficiency		=	1,
+	.cur_freq		=	1,
+	.max_freq		=	1,
+	.max_mitigated_freq	=	UINT_MAX,
+	.min_freq		=	1,
+	.max_possible_freq	=	1,
+	.exec_scale_factor	=	1024,
+	.aggr_grp_load		=	0,
+};
+
+void init_clusters(void)
+{
+	init_cluster.cpus = *cpu_possible_mask;
+	raw_spin_lock_init(&init_cluster.load_lock);
+	INIT_LIST_HEAD(&cluster_head);
+	list_add(&init_cluster.list, &cluster_head);
+}
 
 static void
 insert_cluster(struct sched_cluster *cluster, struct list_head *head)
@@ -2394,6 +2430,7 @@ void update_cluster_topology(void)
 {
 	struct cpumask cpus = *cpu_possible_mask;
 	const struct cpumask *cluster_cpus;
+	struct sched_cluster *cluster;
 	struct list_head new_head;
 	int i;
 
@@ -2418,38 +2455,15 @@ void update_cluster_topology(void)
 	 */
 	move_list(&cluster_head, &new_head, false);
 	update_all_clusters_stats();
-}
 
-struct sched_cluster init_cluster = {
-	.list			=	LIST_HEAD_INIT(init_cluster.list),
-	.id			=	0,
-	.max_power_cost		=	1,
-	.min_power_cost		=	1,
-	.capacity		=	1024,
-	.max_possible_capacity	=	1024,
-	.efficiency		=	1,
-	.load_scale_factor	=	1024,
-	.cur_freq		=	1,
-	.max_freq		=	1,
-	.max_mitigated_freq	=	UINT_MAX,
-	.min_freq		=	1,
-	.max_possible_freq	=	1,
-	.dstate			=	0,
-	.dstate_wakeup_energy	=	0,
-	.dstate_wakeup_latency	=	0,
-	.exec_scale_factor	=	1024,
-	.notifier_sent		=	0,
-	.wake_up_idle		=	0,
-	.aggr_grp_load		=	0,
-	.coloc_boost_load	=	0,
-};
+	for_each_sched_cluster(cluster) {
+		if (cpumask_weight(&cluster->cpus) == 1)
+			cpumask_or(&asym_cap_sibling_cpus,
+				   &asym_cap_sibling_cpus, &cluster->cpus);
+	}
 
-void init_clusters(void)
-{
-	bitmap_clear(all_cluster_ids, 0, NR_CPUS);
-	init_cluster.cpus = *cpu_possible_mask;
-	raw_spin_lock_init(&init_cluster.load_lock);
-	INIT_LIST_HEAD(&cluster_head);
+	if (cpumask_weight(&asym_cap_sibling_cpus) == 1)
+		cpumask_clear(&asym_cap_sibling_cpus);
 }
 
 static unsigned long cpu_max_table_freq[NR_CPUS];
@@ -2509,7 +2523,7 @@ static int cpufreq_notifier_policy(struct notifier_block *nb,
 	}
 
 	if (update_capacity)
-		update_cpu_cluster_capacity(policy->related_cpus);
+		walt_cpus_capacity_changed(policy->related_cpus);
 
 	return 0;
 }
@@ -3096,7 +3110,7 @@ void sched_update_cpu_freq_min_max(const cpumask_t *cpus, u32 fmin, u32 fmax)
 	spin_unlock_irqrestore(&cpu_freq_min_max_lock, flags);
 
 	if (update_capacity)
-		update_cpu_cluster_capacity(cpus);
+		walt_cpus_capacity_changed(cpus);
 }
 
 void note_task_waking(struct task_struct *p, u64 wallclock)

@@ -2808,7 +2808,6 @@ extern unsigned int __read_mostly sched_init_task_load_windows;
 extern unsigned int up_down_migrate_scale_factor;
 extern unsigned int sysctl_sched_restrict_cluster_spill;
 extern unsigned int sched_pred_alert_load;
-extern struct sched_cluster init_cluster;
 extern unsigned int  __read_mostly sched_short_sleep_task_threshold;
 extern unsigned int  __read_mostly sched_long_cpu_selection_threshold;
 extern unsigned int  __read_mostly sched_big_waker_task_load;
@@ -3093,8 +3092,6 @@ static inline void restore_cgroup_boost_settings(void) { }
 #endif
 
 extern int alloc_related_thread_groups(void);
-
-extern unsigned long all_cluster_ids[];
 
 extern void check_for_migration(struct rq *rq, struct task_struct *p);
 
