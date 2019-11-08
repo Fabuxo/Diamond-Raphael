@@ -2057,14 +2057,10 @@ static inline unsigned long capacity_orig_of(int cpu)
 	return cpu_rq(cpu)->cpu_capacity_orig;
 }
 
-extern unsigned int sysctl_sched_use_walt_cpu_util;
-extern unsigned int walt_disabled;
-
 static inline unsigned long task_util(struct task_struct *p)
 {
 #ifdef CONFIG_SCHED_WALT
-	if (likely(!walt_disabled && sysctl_sched_use_walt_task_util))
-		return p->ravg.demand_scaled;
+	return p->ravg.demand_scaled;
 #endif
 	return READ_ONCE(p->se.avg.util_avg);
 }
@@ -2107,24 +2103,16 @@ static inline unsigned long task_util(struct task_struct *p)
  *
  * Return: the (estimated) utilization for the specified CPU
  */
-
-#ifdef CONFIG_SCHED_WALT
 static inline unsigned long cpu_util(int cpu)
-#else
-static inline unsigned long __cpu_util(int cpu)
-#endif
 {
 	struct cfs_rq *cfs_rq;
 	unsigned int util;
 
 #ifdef CONFIG_SCHED_WALT
-	if (!walt_disabled && sysctl_sched_use_walt_cpu_util) {
-		u64 walt_cpu_util =
-			cpu_rq(cpu)->walt_stats.cumulative_runnable_avg_scaled;
+	u64 walt_cpu_util =
+		cpu_rq(cpu)->walt_stats.cumulative_runnable_avg_scaled;
 
-		return min_t(unsigned long, walt_cpu_util,
-				capacity_orig_of(cpu));
-	}
+	return min_t(unsigned long, walt_cpu_util, capacity_orig_of(cpu));
 #endif
 
 	cfs_rq = &cpu_rq(cpu)->cfs;
@@ -2138,15 +2126,12 @@ static inline unsigned long __cpu_util(int cpu)
 
 static inline unsigned long cpu_util_cum(int cpu, int delta)
 {
+	u64 util = cpu_rq(cpu)->cfs.avg.util_avg;
 	unsigned long capacity = capacity_orig_of(cpu);
-	u64 util;
 
 #ifdef CONFIG_SCHED_WALT
-	util = cpu_util(cpu);
-#else
-	util = __cpu_util(cpu);
+	util = cpu_rq(cpu)->cum_window_demand_scaled;
 #endif
-
 	delta += util;
 	if (delta < 0)
 		return 0;
