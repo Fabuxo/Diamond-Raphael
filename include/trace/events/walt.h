@@ -210,37 +210,37 @@ TRACE_EVENT(sched_update_task_ravg,
 	TP_ARGS(p, rq, evt, wallclock, irqtime, cycles, exec_time, cpu_time),
 
 	TP_STRUCT__entry(
-		__array(	char,	comm,   TASK_COMM_LEN	)
-		__field(	pid_t,	pid			)
-		__field(	pid_t,	cur_pid			)
-		__field(unsigned int,	cur_freq		)
-		__field(	u64,	wallclock		)
-		__field(	u64,	mark_start		)
-		__field(	u64,	delta_m			)
-		__field(	u64,	win_start		)
-		__field(	u64,	delta			)
-		__field(	u64,	irqtime			)
-		__field(enum task_event,	evt		)
-		__field(unsigned int,	demand			)
-		__field(unsigned int,	coloc_demand		)
-		__field(unsigned int,	sum			)
-		__field(	 int,	cpu			)
-		__field(unsigned int,	pred_demand		)
-		__field(	u64,	rq_cs			)
-		__field(	u64,	rq_ps			)
-		__field(	u64,	grp_cs			)
-		__field(	u64,	grp_ps			)
-		__field(	u64,	grp_nt_cs		)
-		__field(	u64,	grp_nt_ps		)
-		__field(	u32,	curr_window		)
-		__field(	u32,	prev_window		)
-		__dynamic_array(u32,	curr_sum, nr_cpu_ids	)
-		__dynamic_array(u32,	prev_sum, nr_cpu_ids	)
-		__field(	u64,	nt_cs			)
-		__field(	u64,	nt_ps			)
-		__field(	u32,	active_windows		)
-		__field(	u8,	curr_top		)
-		__field(	u8,	prev_top		)
+		__array(char,			comm, TASK_COMM_LEN)
+		__field(pid_t,			pid)
+		__field(pid_t,			cur_pid)
+		__field(unsigned int,		cur_freq)
+		__field(u64,			wallclock)
+		__field(u64,			mark_start)
+		__field(u64,			delta_m)
+		__field(u64,			win_start)
+		__field(u64,			delta)
+		__field(u64,			irqtime)
+		__field(enum task_event,	evt)
+		__field(unsigned int,		demand)
+		__field(unsigned int,		coloc_demand)
+		__field(unsigned int,		sum)
+		__field(int,			cpu)
+		__field(unsigned int,		pred_demand)
+		__field(u64,			rq_cs)
+		__field(u64,			rq_ps)
+		__field(u64,			grp_cs)
+		__field(u64,			grp_ps)
+		__field(u64,			grp_nt_cs)
+		__field(u64,			grp_nt_ps)
+		__field(u32,			curr_window)
+		__field(u32,			prev_window)
+		__dynamic_array(u32,		curr_sum, nr_cpu_ids)
+		__dynamic_array(u32,		prev_sum, nr_cpu_ids)
+		__field(u64,			nt_cs)
+		__field(u64,			nt_ps)
+		__field(u64,			active_time)
+		__field(u32,			curr_top)
+		__field(u32,			prev_top)
 	),
 
 	TP_fast_assign(
@@ -272,12 +272,12 @@ TRACE_EVENT(sched_update_task_ravg,
 		__window_data(__get_dynamic_array(prev_sum), p->ravg.prev_window_cpu);
 		__entry->nt_cs		= rq->nt_curr_runnable_sum;
 		__entry->nt_ps		= rq->nt_prev_runnable_sum;
-		__entry->active_windows	= p->ravg.active_windows;
+		__entry->active_time	= p->ravg.active_time;
 		__entry->curr_top	= rq->curr_top;
 		__entry->prev_top	= rq->prev_top;
 	),
 
-	TP_printk("wc %llu ws %llu delta %llu event %s cpu %d cur_freq %u cur_pid %d task %d (%s) ms %llu delta %llu demand %u coloc_demand: %u sum %u irqtime %llu pred_demand %u rq_cs %llu rq_ps %llu cur_window %u (%s) prev_window %u (%s) nt_cs %llu nt_ps %llu active_wins %u grp_cs %lld grp_ps %lld, grp_nt_cs %llu, grp_nt_ps: %llu curr_top %u prev_top %u",
+	    TP_printk("wc %llu ws %llu delta %llu event %s cpu %d cur_freq %u cur_pid %d task %d (%s) ms %llu delta %llu demand %u coloc_demand: %u sum %u irqtime %llu pred_demand %u rq_cs %llu rq_ps %llu cur_window %u (%s) prev_window %u (%s) nt_cs %llu nt_ps %llu active_time %u grp_cs %lld grp_ps %lld, grp_nt_cs %llu, grp_nt_ps: %llu curr_top %u prev_top %u",
 		__entry->wallclock, __entry->win_start, __entry->delta,
 		task_event_names[__entry->evt], __entry->cpu,
 		__entry->cur_freq, __entry->cur_pid,
@@ -289,7 +289,7 @@ TRACE_EVENT(sched_update_task_ravg,
 		__entry->prev_window,
 		__window_print(p, __get_dynamic_array(prev_sum), nr_cpu_ids),
 		__entry->nt_cs, __entry->nt_ps,
-		__entry->active_windows, __entry->grp_cs,
+		__entry->active_time, __entry->grp_cs,
 		__entry->grp_ps, __entry->grp_nt_cs, __entry->grp_nt_ps,
 		__entry->curr_top, __entry->prev_top)
 );
