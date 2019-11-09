@@ -915,6 +915,7 @@ struct rq {
 	u64 cur_irqload;
 	u64 avg_irqload;
 	u64 irqload_ts;
+	u64 task_exec_scale;
 	unsigned int static_cpu_pwr_cost;
 	struct task_struct *ed_task;
 	struct cpu_cycle cc;
@@ -2764,9 +2765,12 @@ struct related_thread_group {
 	raw_spinlock_t lock;
 	struct list_head tasks;
 	struct list_head list;
+	bool skip_min;
 	struct sched_cluster *preferred_cluster;
 	struct rcu_head rcu;
 	u64 last_update;
+	u64 downmigrate_ts;
+	u64 start_ts;
 };
 
 extern struct list_head cluster_head;
