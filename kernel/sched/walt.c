@@ -1335,7 +1335,7 @@ static void rollover_task_window(struct task_struct *p, bool full_window)
 		p->ravg.curr_window_cpu[i] = 0;
 	}
 
-	if (p->ravg.active_time < NEW_TASK_ACTIVE_TIME)
+	if (is_new_task(p))
 		p->ravg.active_time += p->ravg.last_win_size;
 }
 
