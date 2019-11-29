@@ -1274,6 +1274,9 @@ static void rollover_task_window(struct task_struct *p, bool full_window)
 		p->ravg.prev_window_cpu[i] = curr_cpu_windows[i];
 		p->ravg.curr_window_cpu[i] = 0;
 	}
+
+	if (is_new_task(p))
+		p->ravg.active_time += p->ravg.last_win_size;
 }
 
 void sched_set_io_is_busy(int val)
@@ -1414,8 +1417,6 @@ static void update_cpu_busy_time(struct task_struct *p, struct rq *rq,
 			p->ravg.active_windows++;
 	}
 
-	new_task = is_new_task(p);
-
 	/*
 	 * Handle per-task window rollover. We don't care about the idle
 	 * task or exiting tasks.
@@ -1424,6 +1425,8 @@ static void update_cpu_busy_time(struct task_struct *p, struct rq *rq,
 		if (new_window)
 			rollover_task_window(p, full_window);
 	}
+
+	new_task = is_new_task(p);
 
 	if (p_is_curr_task && new_window) {
 		rollover_cpu_window(rq, full_window);
