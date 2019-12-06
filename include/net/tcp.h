@@ -516,9 +516,23 @@ struct sock *cookie_v4_check(struct sock *sk, struct sk_buff *skb);
  */
 static inline void tcp_synq_overflow(const struct sock *sk)
 {
-	unsigned long last_overflow = READ_ONCE(tcp_sk(sk)->rx_opt.ts_recent_stamp);
-	unsigned long now = jiffies;
+	unsigned int last_overflow;
+	unsigned int now = jiffies;
 
+	if (sk->sk_reuseport) {
+		struct sock_reuseport *reuse;
+
+		reuse = rcu_dereference(sk->sk_reuseport_cb);
+		if (likely(reuse)) {
+			last_overflow = READ_ONCE(reuse->synq_overflow_ts);
+			if (!time_between32(now, last_overflow,
+					    last_overflow + HZ))
+				WRITE_ONCE(reuse->synq_overflow_ts, now);
+			return;
+		}
+	}
+
+	last_overflow = READ_ONCE(tcp_sk(sk)->rx_opt.ts_recent_stamp);
 	if (!time_between32(now, last_overflow, last_overflow + HZ))
 		WRITE_ONCE(tcp_sk(sk)->rx_opt.ts_recent_stamp, now);
 }
