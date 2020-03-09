@@ -3335,6 +3335,9 @@ int walt_proc_update_handler(struct ctl_table *table, int write,
 	unsigned int *data = (unsigned int *)table->data;
 	static DEFINE_MUTEX(mutex);
 
+	if (unlikely(num_sched_clusters <= 0))
+		return -EPERM;
+
 	mutex_lock(&mutex);
 	ret = proc_dointvec_minmax(table, write, buffer, lenp, ppos);
 	if (ret || !write) {
