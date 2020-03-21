@@ -3398,20 +3398,9 @@ static void __lockdep_init_map_waits(struct lockdep_map *lock, const char *name,
 void lockdep_init_map_waits(struct lockdep_map *lock, const char *name,
 		      struct lock_class_key *key, int subclass)
 {
-	cross_init(lock, 0);
 	__lockdep_init_map_waits(lock, name, key, subclass);
 }
 EXPORT_SYMBOL_GPL(lockdep_init_map_waits);
-
-#ifdef CONFIG_LOCKDEP_CROSSRELEASE
-void lockdep_init_map_crosslock(struct lockdep_map *lock, const char *name,
-		      struct lock_class_key *key, int subclass)
-{
-	cross_init(lock, 1);
-	__lockdep_init_map(lock, name, key, subclass);
-}
-EXPORT_SYMBOL_GPL(lockdep_init_map_crosslock);
-#endif
 
 struct lock_class_key __lockdep_no_validate__;
 EXPORT_SYMBOL_GPL(__lockdep_no_validate__);

@@ -42,7 +42,6 @@ do {						\
 # define trace_hardirq_threaded()		\
 do {						\
 	current->hardirq_threaded = 1;		\
-	crossrelease_hist_start(XHLOCK_SOFT);	\
 } while (0)
 # define lockdep_softirq_exit()			\
 do {						\
