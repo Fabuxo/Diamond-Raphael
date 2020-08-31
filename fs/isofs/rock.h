@@ -18,11 +18,19 @@ struct SU_CE_s {
 };
 
 struct SU_ER_s {
+<<<<<<< HEAD
 	unsigned char len_id;
 	unsigned char len_des;
 	unsigned char len_src;
 	unsigned char ext_ver;
 	char data[];
+=======
+	__u8 len_id;
+	__u8 len_des;
+	__u8 len_src;
+	__u8 ext_ver;
+	__u8 data[];
+>>>>>>> 5b4c91815378 (UPSTREAM: fs: Replace zero-length array with flexible-array member)
 } __attribute__ ((packed));
 
 struct RR_RR_s {
@@ -42,9 +50,15 @@ struct RR_PN_s {
 };
 
 struct SL_component {
+<<<<<<< HEAD
 	unsigned char flags;
 	unsigned char len;
 	char text[];
+=======
+	__u8 flags;
+	__u8 len;
+	__u8 text[];
+>>>>>>> 5b4c91815378 (UPSTREAM: fs: Replace zero-length array with flexible-array member)
 } __attribute__ ((packed));
 
 struct RR_SL_s {
@@ -53,7 +67,11 @@ struct RR_SL_s {
 } __attribute__ ((packed));
 
 struct RR_NM_s {
+<<<<<<< HEAD
 	unsigned char flags;
+=======
+	__u8 flags;
+>>>>>>> 5b4c91815378 (UPSTREAM: fs: Replace zero-length array with flexible-array member)
 	char name[];
 } __attribute__ ((packed));
 
@@ -70,7 +88,11 @@ struct stamp {
 } __attribute__ ((packed));
 
 struct RR_TF_s {
+<<<<<<< HEAD
 	char flags;
+=======
+	__u8 flags;
+>>>>>>> 5b4c91815378 (UPSTREAM: fs: Replace zero-length array with flexible-array member)
 	struct stamp times[];	/* Variable number of these beasts */
 } __attribute__ ((packed));
 
