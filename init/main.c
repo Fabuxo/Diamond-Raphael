@@ -930,12 +930,22 @@ static void __init do_initcall_level(int level)
 static void __init do_initcalls(void)
 {
 	int level;
+	size_t len = strlen(saved_command_line) + 1;
+	char *command_line;
+
+	command_line = kzalloc(len, GFP_KERNEL);
+	if (!command_line)
+		panic("%s: Failed to allocate %zu bytes\n", __func__, len);
 
 	for (level = 0; level < ARRAY_SIZE(initcall_levels) - 1; level++) {
-		do_initcall_level(level);
+		/* Parser modifies command_line, restore it each time */
+		strcpy(command_line, saved_command_line);
+		do_initcall_level(level, command_line);
 		/* finish all async calls before going into next level */
 		async_synchronize_full();
 	}
+
+	kfree(command_line);
 }
 
 /*
