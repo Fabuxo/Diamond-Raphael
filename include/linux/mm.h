@@ -204,6 +204,7 @@ extern unsigned int kobjsize(const void *objp);
 #define VM_ACCOUNT	0x00100000	/* Is a VM accounted object */
 #define VM_NORESERVE	0x00200000	/* should the VM suppress accounting */
 #define VM_HUGETLB	0x00400000	/* Huge TLB Page VM */
+#define VM_SYNC		0x00800000	/* Synchronous page faults */
 #define VM_ARCH_1	0x01000000	/* Architecture-specific flag */
 #define VM_WIPEONFORK	0x02000000	/* Wipe VMA contents in child. */
 #define VM_DONTDUMP	0x04000000	/* Do not include in the core dump */
@@ -2904,6 +2905,26 @@ static inline void setup_nr_node_ids(void) {}
 #endif
 
 extern int want_old_faultaround_pte;
+
+#ifdef CONFIG_PROCESS_RECLAIM
+struct reclaim_param {
+	struct vm_area_struct *vma;
+	/* Number of pages scanned */
+	int nr_scanned;
+	/* max pages to reclaim */
+	int nr_to_reclaim;
+	/* pages reclaimed */
+	int nr_reclaimed;
+};
+extern struct reclaim_param reclaim_task_anon(struct task_struct *task,
+		int nr_to_reclaim);
+extern struct reclaim_param reclaim_task_nomap(struct task_struct *task,
+		int nr_to_reclaim);
+extern int reclaim_address_space(struct address_space *mapping,
+		struct reclaim_param *rp);
+extern int proc_reclaim_notifier_register(struct notifier_block *nb);
+extern int proc_reclaim_notifier_unregister(struct notifier_block *nb);
+#endif
 
 #endif /* __KERNEL__ */
 #endif /* _LINUX_MM_H */
