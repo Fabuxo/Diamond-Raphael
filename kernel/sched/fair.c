@@ -9327,7 +9327,7 @@ static void update_blocked_averages(int cpu)
 			continue;
 
 		if (update_cfs_rq_load_avg(cfs_rq_clock_task(cfs_rq), cfs_rq))
-			update_tg_load_avg(cfs_rq, 0);
+			update_tg_load_avg(cfs_rq, UPDATE_TG);
 
 		/* Propagate pending load changes to the parent, if any: */
 		se = cfs_rq->tg->se[cpu];
