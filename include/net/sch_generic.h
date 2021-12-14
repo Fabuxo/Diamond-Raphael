@@ -100,6 +100,10 @@ struct Qdisc {
 	refcount_t		refcnt;
 
 	spinlock_t		busylock ____cacheline_aligned_in_smp;
+	spinlock_t		seqlock;
+#ifndef __GENKSYMS__
+	struct rcu_head		rcu;
+#endif
 };
 
 static inline void qdisc_refcount_inc(struct Qdisc *qdisc)
