@@ -1,14 +1,7 @@
-/* Copyright (c) 2010-2019, The Linux Foundation. All rights reserved.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 and
- * only version 2 as published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
+// SPDX-License-Identifier: GPL-2.0-only
+/*
+ * Copyright (c) 2010-2021, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include <linux/export.h>
@@ -317,6 +310,180 @@ void kgsl_pwrctrl_buslevel_update(struct kgsl_device *device,
 }
 EXPORT_SYMBOL(kgsl_pwrctrl_buslevel_update);
 
+#if IS_ENABLED(CONFIG_QCOM_CX_IPEAK)
+static int kgsl_pwr_cx_ipeak_freq_limit(void *ptr, unsigned int freq)
+{
+	struct kgsl_pwr_limit *cx_ipeak_pwr_limit = ptr;
+
+	if (IS_ERR_OR_NULL(cx_ipeak_pwr_limit))
+		return -EINVAL;
+
+	/* CX-ipeak safe interrupt to remove freq limit */
+	if (freq == 0) {
+		kgsl_pwr_limits_set_default(cx_ipeak_pwr_limit);
+		return 0;
+	}
+
+	return kgsl_pwr_limits_set_freq(cx_ipeak_pwr_limit, freq);
+}
+
+static int kgsl_pwrctrl_cx_ipeak_vote(struct kgsl_device *device,
+		u64 old_freq, u64 new_freq)
+{
+	struct kgsl_pwrctrl *pwr = &device->pwrctrl;
+	int i, ret;
+
+	for (i = 0; i < ARRAY_SIZE(pwr->gpu_ipeak_client); i++) {
+		struct gpu_cx_ipeak_client *ipeak_client =
+				&pwr->gpu_ipeak_client[i];
+
+		/*
+		 * Set CX Ipeak vote for GPU if it tries to cross
+		 * threshold frequency.
+		 */
+		if (old_freq < ipeak_client->freq &&
+				new_freq >= ipeak_client->freq) {
+			ret = cx_ipeak_update(ipeak_client->client, true);
+			/*
+			 * Hardware damage is possible at peak current
+			 * if mitigation not done to limit peak power.
+			 */
+			if (ret) {
+				dev_err(device->dev,
+					"ipeak voting failed for client%d: %d\n",
+						i, ret);
+				return ret;
+			}
+		}
+	}
+
+	return 0;
+}
+
+static void kgsl_pwrctrl_cx_ipeak_unvote(struct kgsl_device *device,
+		u64 old_freq, u64 new_freq)
+{
+	struct kgsl_pwrctrl *pwr = &device->pwrctrl;
+	int i, ret;
+
+	for (i = 0; i < ARRAY_SIZE(pwr->gpu_ipeak_client); i++) {
+		struct gpu_cx_ipeak_client *ipeak_client =
+				&pwr->gpu_ipeak_client[i];
+
+		/*
+		 * Reset CX Ipeak vote for GPU if it goes below
+		 * threshold frequency.
+		 */
+		if (old_freq >= ipeak_client->freq &&
+				new_freq < ipeak_client->freq) {
+			ret = cx_ipeak_update(ipeak_client->client, false);
+
+			/* Failed to withdraw the voting from ipeak driver */
+			if (ret)
+				dev_err(device->dev,
+					"Failed to withdraw ipeak vote for client%d: %d\n",
+					i, ret);
+		}
+	}
+}
+
+static int kgsl_pwrctrl_cx_ipeak_init(struct kgsl_device *device)
+{
+	struct kgsl_pwrctrl *pwr = &device->pwrctrl;
+	struct device_node *node, *child;
+	struct gpu_cx_ipeak_client *cx_ipeak_client;
+	int i = 0, ret;
+
+	node = of_get_child_by_name(device->pdev->dev.of_node,
+				"qcom,gpu-cx-ipeak");
+
+	if (node == NULL)
+		return 0;
+
+	for_each_child_of_node(node, child) {
+		if (i >= ARRAY_SIZE(pwr->gpu_ipeak_client)) {
+			dev_err(device->dev,
+				"dt: too many CX ipeak clients defined\n",
+					i);
+			ret = -EINVAL;
+			of_node_put(child);
+			goto error;
+		}
+
+		cx_ipeak_client = &pwr->gpu_ipeak_client[i];
+
+		if (!of_property_read_u32(child, "qcom,gpu-cx-ipeak-freq",
+				&cx_ipeak_client->freq)) {
+			cx_ipeak_client->client =
+				cx_ipeak_register(child, "qcom,gpu-cx-ipeak");
+
+			if (IS_ERR_OR_NULL(cx_ipeak_client->client)) {
+				ret = IS_ERR(cx_ipeak_client->client) ?
+				PTR_ERR(cx_ipeak_client->client) : -EINVAL;
+				dev_err(device->dev,
+					"Failed to register client%d with CX Ipeak %d\n",
+					i, ret);
+			}
+		} else {
+			ret = -EINVAL;
+			dev_err(device->dev,
+				"Failed to get GPU-CX-Ipeak client%d frequency\n",
+				i);
+		}
+
+		if (ret) {
+			of_node_put(child);
+			goto error;
+		}
+
+		++i;
+	}
+
+	/* cx_ipeak limits for GPU freq throttling */
+	pwr->cx_ipeak_pwr_limit = kgsl_pwr_limits_add(KGSL_DEVICE_3D0);
+	if (IS_ERR_OR_NULL(pwr->cx_ipeak_pwr_limit)) {
+		dev_err(device->dev,
+				"Failed to get cx_ipeak power limit\n");
+		ret = -EINVAL;
+		goto error;
+	}
+
+	cx_ipeak_client = &pwr->gpu_ipeak_client[0];
+	if (!IS_ERR_OR_NULL(cx_ipeak_client->client)) {
+		ret = cx_ipeak_victim_register(cx_ipeak_client->client,
+				kgsl_pwr_cx_ipeak_freq_limit,
+				pwr->cx_ipeak_pwr_limit);
+		if (ret) {
+			kgsl_pwr_limits_del(pwr->cx_ipeak_pwr_limit);
+			if (ret != -ENOENT) {
+				dev_err(device->dev,
+					"Failed to register GPU-CX-Ipeak victim\n");
+				goto error;
+			}
+		}
+	}
+
+	of_node_put(node);
+	return 0;
+
+error:
+	for (i = 0; i < ARRAY_SIZE(pwr->gpu_ipeak_client); i++) {
+		if (!IS_ERR_OR_NULL(pwr->gpu_ipeak_client[i].client)) {
+			cx_ipeak_unregister(pwr->gpu_ipeak_client[i].client);
+			pwr->gpu_ipeak_client[i].client = NULL;
+		}
+	}
+
+	of_node_put(node);
+	return ret;
+}
+#else
+static int kgsl_pwrctrl_cx_ipeak_init(struct kgsl_device *device)
+{
+	return 0;
+}
+#endif
+
 /**
  * kgsl_pwrctrl_pwrlevel_change_settings() - Program h/w during powerlevel
  * transitions
@@ -595,16 +762,19 @@ static ssize_t kgsl_pwrctrl_thermal_pwrlevel_store(struct device *dev,
 	if (ret)
 		return ret;
 
-	mutex_lock(&device->mutex);
-
 	if (level > pwr->num_pwrlevels - 2)
 		level = pwr->num_pwrlevels - 2;
 
-	pwr->thermal_pwrlevel = level;
-
-	/* Update the current level using the new limit */
-	kgsl_pwrctrl_pwrlevel_change(device, pwr->active_pwrlevel);
-	mutex_unlock(&device->mutex);
+	if (kgsl_pwr_limits_set_freq(pwr->sysfs_pwr_limit,
+			pwr->pwrlevels[level].gpu_freq)) {
+		dev_err(device->dev,
+				"Failed to set sysfs thermal limit via limits fw\n");
+		mutex_lock(&device->mutex);
+		pwr->thermal_pwrlevel = level;
+		/* Update the current level using the new limit */
+		kgsl_pwrctrl_pwrlevel_change(device, pwr->active_pwrlevel);
+		mutex_unlock(&device->mutex);
+	}
 
 	return count;
 }
@@ -2179,7 +2349,7 @@ int kgsl_pwrctrl_init(struct kgsl_device *device)
 	/* Initialize the user and thermal clock constraints */
 
 	pwr->max_pwrlevel = 0;
-	pwr->min_pwrlevel = pwr->num_pwrlevels - 2;
+	pwr->min_pwrlevel = pwr->num_pwrlevels - 1;
 	pwr->thermal_pwrlevel = 0;
 	pwr->thermal_pwrlevel_floor = pwr->min_pwrlevel;
 
@@ -2334,6 +2504,22 @@ int kgsl_pwrctrl_init(struct kgsl_device *device)
 
 	INIT_LIST_HEAD(&pwr->limits);
 	spin_lock_init(&pwr->limits_lock);
+
+	result = kgsl_pwrctrl_cx_ipeak_init(device);
+	if (result)
+		goto error_cleanup_bus_ib;
+
+	pwr->cooling_pwr_limit = kgsl_pwr_limits_add(KGSL_DEVICE_3D0);
+	if (IS_ERR_OR_NULL(pwr->cooling_pwr_limit)) {
+		dev_err(device->dev, "Failed to add cooling power limit\n");
+		result = -EINVAL;
+		pwr->cooling_pwr_limit = NULL;
+		goto error_cleanup_bus_ib;
+	}
+
+	INIT_WORK(&pwr->thermal_cycle_ws, kgsl_thermal_cycle);
+	setup_timer(&pwr->thermal_timer, kgsl_thermal_timer, 0);
+
 	pwr->sysfs_pwr_limit = kgsl_pwr_limits_add(KGSL_DEVICE_3D0);
 
 	kgsl_pwrctrl_vbif_init();
@@ -2378,6 +2564,7 @@ error_cleanup_pwr_limit:
 		kfree(pwr->sysfs_pwr_limit);
 		pwr->sysfs_pwr_limit = NULL;
 	}
+error_cleanup_bus_ib:
 	kfree(pwr->bus_ib);
 error_cleanup_pcl:
 	_close_pcl(pwr);
@@ -2409,6 +2596,10 @@ void kgsl_pwrctrl_close(struct kgsl_device *device)
 		kfree(pwr->sysfs_pwr_limit);
 		pwr->sysfs_pwr_limit = NULL;
 	}
+
+	kgsl_pwr_limits_del(pwr->cooling_pwr_limit);
+	pwr->cooling_pwr_limit = NULL;
+
 	kfree(pwr->bus_ib);
 
 	_close_pcl(pwr);
