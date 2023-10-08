@@ -127,7 +127,6 @@ config ARM64
 	select HAVE_GENERIC_DMA_COHERENT
 	select HAVE_HW_BREAKPOINT if PERF_EVENTS
 	select HAVE_IRQ_TIME_ACCOUNTING
-	select HAVE_LD_DEAD_CODE_DATA_ELIMINATION
 	select HAVE_MEMBLOCK
 	select HAVE_MEMBLOCK_NODE_MAP if NUMA
 	select HAVE_NMI if ACPI_APEI_SEA
@@ -138,6 +137,9 @@ config ARM64
 	select HAVE_REGS_AND_STACK_ACCESS_API
 	select HAVE_FUTEX_CMPXCHG if FUTEX
 	select MMU_GATHER_RCU_TABLE_FREE
+	select HAVE_RCU_TABLE_FREE
+	select HAVE_RSEQ
+	select HAVE_STACKPROTECTOR
 	select HAVE_SYSCALL_TRACEPOINTS
 	select HAVE_KPROBES
 	select HAVE_KRETPROBES
@@ -150,7 +152,6 @@ config ARM64
 	select OF_EARLY_FLATTREE
 	select OF_RESERVED_MEM
 	select PCI_ECAM if ACPI
-	select PCI_LOCKLESS_CONFIG if PCI && ARCH_QCOM
 	select POWER_RESET
 	select POWER_SUPPLY
 	select SPARSE_IRQ
@@ -591,6 +592,22 @@ config ARM64_ERRATUM_1742098
 	  are only present if the cryptography extensions are present.
 	  All software should have a fallback implementation for CPUs
 	  that don't implement the cryptography extensions.
+
+config ARM64_ERRATUM_1463225
+	bool "Cortex-A76: Software Step might prevent interrupt recognition"
+	default y
+	help
+	  This option adds a workaround for Arm Cortex-A76 erratum 1463225.
+
+	  On the affected Cortex-A76 cores (r0p0 to r3p1), software stepping
+	  of a system call instruction (SVC) can prevent recognition of
+	  subsequent interrupts when software stepping is disabled in the
+	  exception handler of the system call and either kernel debugging
+	  is enabled or VHE is in use.
+
+	  Work around the erratum by triggering a dummy step exception
+	  when handling a system call from a task that is being stepped
+	  in a VHE configuration of the kernel.
 
 	  If unsure, say Y.
 
@@ -1111,7 +1128,7 @@ config MITIGATE_SPECTRE_BRANCH_HISTORY
 	  Speculation attacks against some high-performance processors can
 	  make use of branch history to influence future speculation.
 	  When taking an exception from user-space, a sequence of branches
-	  or a firmware call overwrites the branch history.
+	  or a firmware call overwrites the branch history
 
 menuconfig ARMV8_DEPRECATED
 	bool "Emulate deprecated/obsolete ARMv8 instructions"
@@ -1558,10 +1575,10 @@ config COMPAT_VDSO
 	help
 	  Warning: a 32-bit toolchain is necessary to build the vDSO. You
 	  must explicitly define which toolchain should be used by setting
-	  CROSS_COMPILE_COMPAT to the prefix of the 32-bit toolchain (same format
-	  as CROSS_COMPILE). If CROSS_COMPILE_COMPAT is empty, a warning will be
+	  CROSS_COMPILE_ARM32 to the prefix of the 32-bit toolchain (same format
+	  as CROSS_COMPILE). If CROSS_COMPILE_ARM32 is empty, a warning will be
 	  printed and the kernel will be built as if COMPAT_VDSO had not been
-	  set. If CROSS_COMPILE_COMPAT is set to an invalid prefix, compilation
+	  set. If CROSS_COMPILE_ARM32 is set to an invalid prefix, compilation
 	  will be aborted.
 
 	  Provide a vDSO to 32-bit processes. It includes the symbols provided
@@ -1569,10 +1586,10 @@ config COMPAT_VDSO
 	  the compat vDSO without modification. It also provides sigreturn
 	  trampolines, replacing the sigreturn page.
 
-config CROSS_COMPILE_COMPAT
+config CROSS_COMPILE_ARM32
 	string "32-bit toolchain prefix"
 	help
-	  Same as setting CROSS_COMPILE_COMPAT in the environment, but saved for
+	  Same as setting CROSS_COMPILE_ARM32 in the environment, but saved for
 	  future builds. The environment variable overrides this config option.
 
 endmenu
