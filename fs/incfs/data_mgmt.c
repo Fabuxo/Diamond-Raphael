@@ -421,71 +421,14 @@ void incfs_free_dir_file(struct dir_file *dir)
 	kfree(dir);
 }
 
-static ssize_t zstd_decompress_safe(struct mount_info *mi,
-				    struct mem_range src, struct mem_range dst)
+static ssize_t decompress(struct mem_range src, struct mem_range dst)
 {
-	ssize_t result;
-	ZSTD_inBuffer inbuf = {.src = src.data,	.size = src.len};
-	ZSTD_outBuffer outbuf = {.dst = dst.data, .size = dst.len};
+	int result = LZ4_decompress_safe(src.data, dst.data, src.len, dst.len);
 
-	result = mutex_lock_interruptible(&mi->mi_zstd_workspace_mutex);
-	if (result)
-		return result;
+	if (result < 0)
+		return -EBADMSG;
 
-	if (!mi->mi_zstd_stream) {
-		unsigned int workspace_size = zstd_dstream_workspace_bound(
-						INCFS_DATA_FILE_BLOCK_SIZE);
-		void *workspace = kvmalloc(workspace_size, GFP_NOFS);
-		ZSTD_DStream *stream;
-
-		if (!workspace) {
-			result = -ENOMEM;
-			goto out;
-		}
-
-		stream = zstd_init_dstream(INCFS_DATA_FILE_BLOCK_SIZE, workspace,
-				  workspace_size);
-		if (!stream) {
-			kvfree(workspace);
-			result = -EIO;
-			goto out;
-		}
-
-		mi->mi_zstd_workspace = workspace;
-		mi->mi_zstd_stream = stream;
-	}
-
-	result = ZSTD_decompressStream(mi->mi_zstd_stream, &outbuf, &inbuf) ?
-		-EBADMSG : outbuf.pos;
-
-	mod_delayed_work(system_wq, &mi->mi_zstd_cleanup_work,
-			 msecs_to_jiffies(5000));
-
-out:
-	mutex_unlock(&mi->mi_zstd_workspace_mutex);
 	return result;
-}
-
-static ssize_t decompress(struct mount_info *mi,
-			  struct mem_range src, struct mem_range dst, int alg)
-{
-	int result;
-
-	switch (alg) {
-	case INCFS_BLOCK_COMPRESSED_LZ4:
-		result = LZ4_decompress_safe(src.data, dst.data, src.len,
-					     dst.len);
-		if (result < 0)
-			return -EBADMSG;
-		return result;
-
-	case INCFS_BLOCK_COMPRESSED_ZSTD:
-		return zstd_decompress_safe(mi, src, dst);
-
-	default:
-		WARN_ON(true);
-		return -EOPNOTSUPP;
-	}
 }
 
 static void log_read_one_record(struct read_log *rl, struct read_log_state *rs)
@@ -1318,8 +1261,7 @@ ssize_t incfs_read_data_file_block(struct mem_range dst, struct file *f,
 		result = incfs_kread(bfc, tmp.data, bytes_to_read, pos);
 		if (result == bytes_to_read) {
 			result =
-				decompress(mi, range(tmp.data, bytes_to_read),
-					   dst, block.db_comp_alg);
+				decompress(range(tmp.data, bytes_to_read), dst);
 			if (result < 0) {
 				const char *name =
 				    bfc->bc_file->f_path.dentry->d_name.name;

@@ -17,11 +17,6 @@ KCOV_INSTRUMENT_list_debug.o := n
 KCOV_INSTRUMENT_debugobjects.o := n
 KCOV_INSTRUMENT_dynamic_debug.o := n
 
-# string.o implements standard library functions like memset/memcpy etc.
-# Use -ffreestanding to ensure that the compiler does not try to "optimize"
-# them into calls to themselves.
-CFLAGS_string.o := -ffreestanding
-
 # Early boot use of cmdline, don't instrument it
 ifdef CONFIG_AMD_MEM_ENCRYPT
 KASAN_SANITIZE_string.o := n
@@ -30,11 +25,8 @@ ifdef CONFIG_FUNCTION_TRACER
 CFLAGS_REMOVE_string.o = -pg
 endif
 
-CFLAGS_string.o += $(call cc-option, -fno-stack-protector)
+CFLAGS_string.o := $(call cc-option, -fno-stack-protector)
 endif
-
-ccflags-y += -mllvm -inline-threshold=15000
-ccflags-y += -mllvm -inlinehint-threshold=10000
 
 lib-y := ctype.o string.o vsprintf.o cmdline.o \
 	 rbtree.o radix-tree.o dump_stack.o timerqueue.o\
@@ -149,7 +141,6 @@ obj-$(CONFIG_LZ4HC_COMPRESS) += lz4/
 obj-$(CONFIG_LZ4_DECOMPRESS) += lz4/
 obj-$(CONFIG_ZSTD_COMPRESS) += zstd/
 obj-$(CONFIG_ZSTD_DECOMPRESS) += zstd/
-obj-$(CONFIG_ZSTD_COMMON) += zstd/
 obj-$(CONFIG_XZ_DEC) += xz/
 obj-$(CONFIG_RAID6_PQ) += raid6/
 
@@ -159,7 +150,6 @@ lib-$(CONFIG_DECOMPRESS_LZMA) += decompress_unlzma.o
 lib-$(CONFIG_DECOMPRESS_XZ) += decompress_unxz.o
 lib-$(CONFIG_DECOMPRESS_LZO) += decompress_unlzo.o
 lib-$(CONFIG_DECOMPRESS_LZ4) += decompress_unlz4.o
-lib-$(CONFIG_DECOMPRESS_ZSTD) += decompress_unzstd.o
 
 obj-$(CONFIG_TEXTSEARCH) += textsearch.o
 obj-$(CONFIG_TEXTSEARCH_KMP) += ts_kmp.o
@@ -283,13 +273,3 @@ obj-$(CONFIG_SBITMAP) += sbitmap.o
 obj-$(CONFIG_PARMAN) += parman.o
 
 obj-y += crypto/
-
-# KUnit tests
-CFLAGS_bitfield_kunit.o := $(call cc-option,-Wframe-larger-than=10240)
-obj-$(CONFIG_BITFIELD_KUNIT) += bitfield_kunit.o
-obj-$(CONFIG_LIST_KUNIT_TEST) += list-test.o
-obj-$(CONFIG_LINEAR_RANGES_TEST) += test_linear_ranges.o
-obj-$(CONFIG_BITS_TEST) += test_bits.o
-obj-$(CONFIG_CMDLINE_KUNIT_TEST) += cmdline_kunit.o
-obj-$(CONFIG_SLUB_KUNIT_TEST) += slub_kunit.o
-obj-$(CONFIG_MEMCPY_KUNIT_TEST) += memcpy_kunit.o
