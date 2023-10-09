@@ -25,6 +25,7 @@
  */
 
 #include "../locking/rtmutex_common.h"
+#include <linux/sched/isolation.h>
 
 #ifdef CONFIG_RCU_NOCB_CPU
 static cpumask_var_t rcu_nocb_mask; /* CPUs to have callbacks offloaded. */
@@ -2580,7 +2581,7 @@ static void rcu_bind_gp_kthread(void)
 {
 	if (!tick_nohz_full_enabled())
 		return;
-	housekeeping_affine(current);
+	housekeeping_affine(current, HK_FLAG_RCU);
 }
 
 /* Record the current task on dyntick-idle entry. */

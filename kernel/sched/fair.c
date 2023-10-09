@@ -150,7 +150,7 @@ unsigned int __read_mostly sysctl_sched_energy_aware = 1;
 unsigned int sysctl_sched_wakeup_granularity		= 1000000UL;
 unsigned int normalized_sysctl_sched_wakeup_granularity	= 1000000UL;
 
-const_debug unsigned int sysctl_sched_migration_cost	= 1000000UL;
+const_debug unsigned int sysctl_sched_migration_cost	= 500000UL;
 DEFINE_PER_CPU_READ_MOSTLY(int, sched_load_boost);
 
 #ifdef CONFIG_SCHED_WALT
@@ -194,41 +194,13 @@ unsigned int capacity_margin				= 1280;
 
 /* Migration margins */
 unsigned int sysctl_sched_capacity_margin_up[MAX_MARGIN_LEVELS] = {
-	[0 ... MAX_MARGIN_LEVELS - 1] = 1078
-}; /* ~5% margin */
+			[0 ... MAX_MARGIN_LEVELS-1] = 1078}; /* ~5% margin */
 unsigned int sysctl_sched_capacity_margin_down[MAX_MARGIN_LEVELS] = {
-	[0 ... MAX_MARGIN_LEVELS - 1] = 1205
-}; /* ~15% margin */
-unsigned int sysctl_sched_capacity_margin_up_boosted[MAX_MARGIN_LEVELS] = {
-	[0 ... MAX_MARGIN_LEVELS-1] = 1078
-}; /* ~5% margin */
-unsigned int sysctl_sched_capacity_margin_down_boosted[MAX_MARGIN_LEVELS] = {
-	1205, 1078
-}; /* ~15% margin for big, ~5% margin for big+ */
-
-#if NR_CPUS == 8
+			[0 ... MAX_MARGIN_LEVELS-1] = 1205}; /* ~15% margin */
 unsigned int sched_capacity_margin_up[NR_CPUS] = {
-	1280, 1280, 1280, 1280, 1280, 1280, 1280, 1078
-}; /* ~20% margin for small and big, 5% for big+ */
+			[0 ... NR_CPUS-1] = 1078}; /* ~5% margin */
 unsigned int sched_capacity_margin_down[NR_CPUS] = {
-	[0 ... NR_CPUS-1] = 1280
-}; /* ~20% margin */
-unsigned int sched_capacity_margin_up_boosted[NR_CPUS] = {
-	1280, 1280, 1280, 1280, 1280, 1280, 1280, 1078
-}; /* ~20% margin for small and big, 5% for big+ */
-unsigned int sched_capacity_margin_down_boosted[NR_CPUS] = {
-	1280, 1280, 1280, 1280, 1575, 1575, 1575, 1280
-}; /* not used for small cores, ~35% margin for big, ~20% margin for big+ */
-#else
-unsigned int sched_capacity_margin_up[NR_CPUS] = {
-	[0 ... NR_CPUS-1] = 1280}; /* ~20% margin */
-unsigned int sched_capacity_margin_down[NR_CPUS] = {
-	[0 ... NR_CPUS-1] = 1280}; /* ~20% margin */
-unsigned int sched_capacity_margin_up_boosted[NR_CPUS] = {
-	[0 ... NR_CPUS-1] = 1280}; /* ~20% margin */
-unsigned int sched_capacity_margin_down_boosted[NR_CPUS] = {
-	[0 ... NR_CPUS-1] = 1280}; /* ~20% margin */
-#endif
+			[0 ... NR_CPUS-1] = 1205}; /* ~15% margin */
 
 #ifdef CONFIG_SCHED_WALT
 /* 1ms default for 20ms window size scaled to 1024 */
@@ -1686,7 +1658,7 @@ static void task_numa_compare(struct task_numa_env *env,
 	int dist = env->dist;
 
 	rcu_read_lock();
-	cur = task_rcu_dereference(&dst_rq->curr);
+	cur = rcu_dereference(dst_rq->curr);
 	if (cur && ((cur->flags & PF_EXITING) || is_idle_task(cur)))
 		cur = NULL;
 
@@ -3791,129 +3763,6 @@ static inline unsigned long task_util_est(struct task_struct *p)
 	return max(task_util(p), _task_util_est(p));
 }
 
-#ifdef CONFIG_UCLAMP_TASK
-static inline unsigned long uclamp_task_util(struct task_struct *p)
-{
-	return clamp(task_util_est(p),
-		     uclamp_eff_value(p, UCLAMP_MIN),
-		     uclamp_eff_value(p, UCLAMP_MAX));
-}
-
-/*
- * Check if we can ignore uclamp_max requirement of a task. The goal is to
- * prevent small transient tasks that share the rq with other tasks that are
- * capped to lift the capping easily/unnecessarily, hence increase power
- * consumption.
- *
- * Returns true if a task can finish its work within a sched_slice() / divider.
- * Where divider = 1 << sysctl_sched_uclamp_max_filter_divider.
- *
- * We look at the immediate history of how long the task ran previously.
- * Converting task util_avg into runtime or sched_slice() into capacity is not
- * trivial and is an expensive operations. In practice this simple approach
- * proved effective to address the common source of noise. If a task suddenly
- * becomes a busy task, we should detect that and lift the capping at tick, see
- * task_tick_uclamp().
- */
-static inline bool uclamp_can_ignore_uclamp_max(struct rq *rq,
-						struct task_struct *p)
-{
-	unsigned long uclamp_min, uclamp_max, util;
-	unsigned long runtime, slice;
-	struct sched_entity *se;
-	struct cfs_rq *cfs_rq;
-
-	if (!uclamp_is_used())
-		return false;
-
-	/*
-	 * If the task is boosted, we generally assume it is important and
-	 * ignoring its uclamp_max to retain the rq at a low performance level
-	 * is unlikely to be the desired behavior.
-	 */
-	uclamp_min = uclamp_eff_value(p, UCLAMP_MIN);
-	if (uclamp_min)
-		return false;
-
-	/*
-	 * If util has crossed uclamp_max threshold, then we have to ensure
-	 * this is always enforced.
-	 */
-	util = task_util_est(p);
-	uclamp_max = uclamp_eff_value(p, UCLAMP_MAX);
-	if (util >= uclamp_max)
-		return false;
-
-	/*
-	 * Based on previous runtime, we check the allowed sched_slice() of the
-	 * task is large enough for this task to run without preemption.
-	 *
-	 *
-	 *	runtime < sched_slice() / divider
-	 *
-	 * ==>
-	 *
-	 *	runtime * divider < sched_slice()
-	 *
-	 * where
-	 *
-	 *	divider = 1 << sysctl_sched_uclamp_max_filter_divider
-	 *
-	 * There are 2 caveats:
-	 *
-	 * 1- When a task migrates on big.LITTLE system, the runtime will not
-	 *    be representative then (not capacity invariant). But this would
-	 *    be one time off error.
-	 *
-	 * 2. runtime is not frequency invariant either. If the
-	 *    divider >= fmax/fmin we should be okay in general because that's
-	 *    the worst case scenario of how much the runtime will be stretched
-	 *    due to it being capped to minimum frequency but the rq should run
-	 *    at max. The rule here is that the task should finish its work
-	 *    within its sched_slice(). Without this runtime scaling there's a
-	 *    small opportunity for the task to ping-pong between capped and
-	 *    uncapped state.
-	 *
-	 */
-	se = &p->se;
-
-	runtime = se->sum_exec_runtime - se->prev_sum_exec_runtime;
-	if (!runtime)
-		return false;
-
-	cfs_rq = cfs_rq_of(se);
-	slice = sched_slice(cfs_rq, se);
-	runtime <<= sysctl_sched_uclamp_max_filter_divider;
-
-	if (runtime >= slice)
-		return false;
-
-	return true;
-}
-
-static inline void uclamp_set_ignore_uclamp_max(struct task_struct *p)
-{
-	p->uclamp_req[UCLAMP_MAX].ignore_uclamp_max = 1;
-}
-
-static inline void uclamp_reset_ignore_uclamp_max(struct task_struct *p)
-{
-	p->uclamp_req[UCLAMP_MAX].ignore_uclamp_max = 0;
-}
-#else
-static inline unsigned long uclamp_task_util(struct task_struct *p)
-{
-	return boosted_task_util(p);
-}
-static inline bool uclamp_can_ignore_uclamp_max(struct rq *rq,
-						struct task_struct *p)
-{
-	return false;
-}
-static inline void uclamp_set_ignore_uclamp_max(struct task_struct *p) {}
-static inline void uclamp_reset_ignore_uclamp_max(struct task_struct *p) {}
-#endif
-
 static inline void util_est_enqueue(struct cfs_rq *cfs_rq,
 				    struct task_struct *p)
 {
@@ -3931,8 +3780,6 @@ static inline void util_est_enqueue(struct cfs_rq *cfs_rq,
 	trace_sched_util_est_cpu(cpu_of(rq_of(cfs_rq)), cfs_rq);
 }
 
-#define UTIL_EST_MARGIN (SCHED_CAPACITY_SCALE / 100)
-
 /*
  * Check if a (signed) value is within a specified (unsigned) margin,
  * based on the observation that:
@@ -3949,7 +3796,7 @@ static inline bool within_margin(int value, int margin)
 static void
 util_est_dequeue(struct cfs_rq *cfs_rq, struct task_struct *p, bool task_sleep)
 {
-	long last_ewma_diff, last_enqueued_diff;
+	long last_ewma_diff;
 	struct util_est ue;
 	int cpu;
 
@@ -3979,8 +3826,6 @@ util_est_dequeue(struct cfs_rq *cfs_rq, struct task_struct *p, bool task_sleep)
 	if (ue.enqueued & UTIL_AVG_UNCHANGED)
 		return;
 
-	last_enqueued_diff = ue.enqueued;
-
 	/*
 	 * Reset EWMA on utilization increases, the moving average is used only
 	 * to smooth utilization decreases.
@@ -3994,17 +3839,12 @@ util_est_dequeue(struct cfs_rq *cfs_rq, struct task_struct *p, bool task_sleep)
 	}
 
 	/*
-	 * Skip update of task's estimated utilization when its members are
+	 * Skip update of task's estimated utilization when its EWMA is
 	 * already ~1% close to its last activation value.
 	 */
 	last_ewma_diff = ue.enqueued - ue.ewma;
-	last_enqueued_diff -= ue.enqueued;
-	if (within_margin(last_ewma_diff, UTIL_EST_MARGIN)) {
-		if (!within_margin(last_enqueued_diff, UTIL_EST_MARGIN))
-			goto done;
-
+	if (within_margin(last_ewma_diff, (SCHED_CAPACITY_SCALE / 100)))
 		return;
-	}
 
 	/*
 	 * To avoid overestimation of actual task utilization, skip updates if
@@ -5486,21 +5326,11 @@ enqueue_task_fair(struct rq *rq, struct task_struct *p, int flags)
 	struct sched_entity *se = &p->se;
 	int task_new = !(flags & ENQUEUE_WAKEUP);
 	bool prefer_idle = sched_feat(EAS_PREFER_IDLE) ?
-#ifdef CONFIG_SCHED_TUNE
 				(schedtune_prefer_idle(p) > 0) : 0;
-#elif  CONFIG_UCLAMP_TASK
-				(uclamp_latency_sensitive(p) > 0) : 0;
-#endif
 
 #ifdef CONFIG_SCHED_WALT
 	p->misfit = !task_fits_max(p, rq->cpu);
 #endif
-
-        if (uclamp_can_ignore_uclamp_max(rq, p)) {
-                uclamp_set_ignore_uclamp_max(p);
-                uclamp_rq_dec_id(rq, p, UCLAMP_MAX);
-        }
-
 	/*
 	 * The code below (indirectly) updates schedutil which looks at
 	 * the cfs_rq utilization to select a frequency.
@@ -5534,9 +5364,6 @@ enqueue_task_fair(struct rq *rq, struct task_struct *p, int flags)
 	 */
 	if (p->in_iowait && prefer_idle)
 		cpufreq_update_util(rq, SCHED_CPUFREQ_IOWAIT);
-
-	if (uclamp_is_ignore_uclamp_max(p))
-		uclamp_reset_ignore_uclamp_max(p);
 
 	for_each_sched_entity(se) {
 		if (se->on_rq)
@@ -5756,21 +5583,9 @@ static inline bool
 cpu_is_in_target_set(struct task_struct *p, int cpu)
 {
 	struct root_domain *rd = cpu_rq(cpu)->rd;
-	int first_cpu, next_usable_cpu;
-
-#ifdef CONFIG_SCHED_TUNE
-	if (schedtune_prefer_high_cap(p)) {
-#elif  CONFIG_UCLAMP_TASK
-	if (uclamp_boosted(p)) {
-#endif
-		first_cpu = rd->mid_cap_orig_cpu != -1 ? rd->mid_cap_orig_cpu :
-			    rd->max_cap_orig_cpu;
-
-	} else {
-		first_cpu = rd->min_cap_orig_cpu;
-	}
-
-	next_usable_cpu = cpumask_next(first_cpu - 1, p->cpus_ptr);
+	int first_cpu = (schedtune_task_boost(p)) ?
+		rd->mid_cap_orig_cpu : rd->min_cap_orig_cpu;
+	int next_usable_cpu = cpumask_next(first_cpu - 1, p->cpus_ptr);
 	return cpu >= next_usable_cpu || next_usable_cpu >= nr_cpu_ids;
 }
 
@@ -6677,7 +6492,7 @@ static int wake_affine(struct sched_domain *sd, struct task_struct *p,
 struct reciprocal_value schedtune_spc_rdiv;
 
 static long
-schedtune_margin(unsigned long signal, long boost)
+schedtune_margin(unsigned long signal, long boost, long capacity)
 {
 	long long margin = 0;
 
@@ -6686,12 +6501,14 @@ schedtune_margin(unsigned long signal, long boost)
 	 *
 	 * The Boost (B) value is used to compute a Margin (M) which is
 	 * proportional to the complement of the original Signal (S):
-	 *   M = B * (SCHED_CAPACITY_SCALE - S)
+	 *   M = B * (capacity - S)
 	 * The obtained M could be used by the caller to "boost" S.
 	 */
 	if (boost >= 0) {
-		margin  = SCHED_CAPACITY_SCALE - signal;
-		margin *= boost;
+		if (capacity > signal) {
+			margin  = capacity - signal;
+			margin *= boost;
+		}
 	} else
 		margin = -signal * boost;
 
@@ -6710,7 +6527,7 @@ schedtune_cpu_margin(unsigned long util, int cpu)
 	if (boost == 0)
 		return 0;
 
-	return schedtune_margin(util, boost);
+	return schedtune_margin(util, boost, capacity_orig_of(cpu));
 }
 
 static inline long
@@ -6724,7 +6541,7 @@ schedtune_task_margin(struct task_struct *task)
 		return 0;
 
 	util = task_util_est(task);
-	margin = schedtune_margin(util, boost);
+	margin = schedtune_margin(util, boost, SCHED_CAPACITY_SCALE);
 
 	return margin;
 }
@@ -6759,20 +6576,12 @@ boosted_cpu_util(int cpu, struct sched_walt_cpu_load *walt_load)
 static inline unsigned long
 boosted_task_util(struct task_struct *task)
 {
-#ifdef CONFIG_UCLAMP_TASK_GROUP
-	unsigned long util = task_util_est(task);
-	unsigned long util_min = uclamp_eff_value(task, UCLAMP_MIN);
-	unsigned long util_max = uclamp_eff_value(task, UCLAMP_MAX);
-
-	return clamp(util, util_min, util_max);
-#else
 	unsigned long util = task_util_est(task);
 	long margin = schedtune_task_margin(task);
 
 	trace_sched_boost_task(task, util, margin);
 
 	return util + margin;
-#endif
 }
 
 static unsigned long cpu_util_without(int cpu, struct task_struct *p);
@@ -7331,17 +7140,11 @@ static inline bool task_fits_capacity(struct task_struct *p,
 	unsigned int margin;
 
 	if (capacity_orig_of(task_cpu(p)) > capacity_orig_of(cpu))
-		margin = schedtune_task_boost(p) > 0 &&
-			 !schedtune_prefer_high_cap(p) ?
-			sched_capacity_margin_down_boosted[task_cpu(p)] :
-			sched_capacity_margin_down[task_cpu(p)];
+		margin = sched_capacity_margin_down[task_cpu(p)];
 	else
-		margin = schedtune_task_boost(p) > 0 &&
-			 !schedtune_prefer_high_cap(p) ?
-			sched_capacity_margin_up_boosted[task_cpu(p)] :
-			sched_capacity_margin_up[task_cpu(p)];
+		margin = sched_capacity_margin_up[task_cpu(p)];
 
-	return capacity * 1024 > uclamp_task_util(p) * margin;
+	return capacity * 1024 > boosted_task_util(p) * margin;
 }
 
 static inline bool task_fits_max(struct task_struct *p, int cpu)
@@ -7353,11 +7156,7 @@ static inline bool task_fits_max(struct task_struct *p, int cpu)
 		return true;
 
 	if ((task_boost_policy(p) == SCHED_BOOST_ON_BIG ||
-#ifdef CONFIG_SCHED_TUNE
 			schedtune_task_boost(p) > 0) &&
-#elif  CONFIG_UCLAMP_TASK
-			uclamp_boosted(p) > 0) &&
-#endif
 			is_min_capacity_cpu(cpu))
 		return false;
 
@@ -7450,8 +7249,7 @@ enum fastpaths {
 static inline int find_best_target(struct task_struct *p, int *backup_cpu,
 				   bool boosted, bool sync_boost,
 				   bool prefer_idle,
-				   struct find_best_target_env *fbt_env,
-				   bool prefer_high_cap)
+				   struct find_best_target_env *fbt_env)
 {
 	unsigned long min_util = boosted_task_util(p);
 	unsigned long target_capacity = ULONG_MAX;
@@ -7485,15 +7283,15 @@ static inline int find_best_target(struct task_struct *p, int *backup_cpu,
 	 * energy efficient CPU candidate, thus requiring to minimise
 	 * target_capacity. For these cases target_capacity is already
 	 * initialized to ULONG_MAX.
-	 * However, for prefer_idle and prefer_high_cap tasks we look for a high
+	 * However, for prefer_idle and boosted tasks we look for a high
 	 * performance CPU, thus requiring to maximise target_capacity. In this
 	 * case we initialise target_capacity to 0.
 	 */
-	if (prefer_idle && prefer_high_cap)
+	if (prefer_idle && boosted)
 		target_capacity = 0;
 
 	/* Find start CPU based on boost value */
-	cpu = start_cpu(p, prefer_high_cap, sync_boost, fbt_env->rtg_target);
+	cpu = start_cpu(p, boosted, sync_boost, fbt_env->rtg_target);
 	if (cpu < 0)
 		return -1;
 
@@ -7550,17 +7348,13 @@ static inline int find_best_target(struct task_struct *p, int *backup_cpu,
 			if (sched_cpu_high_irqload(i))
 				continue;
 
-			/* Skip CPUs which do not fit task requirements */
-			if (capacity_of(i) < boosted_task_util(p))
-				continue;
-
 			/*
 			 * p's blocked utilization is still accounted for on prev_cpu
 			 * so prev_cpu will receive a negative bias due to the double
 			 * accounting. However, the blocked utilization may be zero.
 			 */
 			wake_util = cpu_util_without(i, p);
-			new_util = wake_util + uclamp_task_util(p);
+			new_util = wake_util + task_util_est(p);
 			spare_wake_cap = capacity_orig_of(i) - wake_util;
 
 			if (spare_wake_cap > most_spare_wake_cap) {
@@ -7635,24 +7429,25 @@ static inline int find_best_target(struct task_struct *p, int *backup_cpu,
 			 * tasks.
 			 */
 			if (prefer_idle) {
+
 				/*
 				 * Case A.1: IDLE CPU
 				 * Return the best IDLE CPU we find:
-				 * - for prefer_high_cap tasks: if the task fits in mid
+				 * - for boosted tasks: if the task fits in mid
 				 * cluster, prefer the first mid cluster cpu
 				 * due to cpuset design, then other mid cluster
 				 * cpus. Otherwise, choose max cluster cpu.
-				 * - for !prefer_high_cap tasks: the most energy
+				 * - for !boosted tasks: the most energy
 				 * efficient CPU (i.e. smallest capacity_orig)
 				 */
-				if (prefer_high_cap && mid_cap_orig_cpu != -1 &&
-				    best_idle_cpu == mid_cap_orig_cpu)
+				if (boosted && mid_cap_orig_cpu != -1 &&
+					best_idle_cpu == mid_cap_orig_cpu)
 					break;
 				if (idle_cpu(i)) {
-					if (prefer_high_cap &&
+					if (boosted &&
 					    capacity_orig < target_capacity)
 						continue;
-					if (!prefer_high_cap &&
+					if (!boosted &&
 					    capacity_orig > target_capacity)
 						continue;
 					if (capacity_orig == target_capacity &&
@@ -7826,27 +7621,26 @@ static inline int find_best_target(struct task_struct *p, int *backup_cpu,
 		 * next cluster if they are higher in capacity. If we are
 		 * not in any kind of boost, we break.
 		 */
-		if (!prefer_idle && !prefer_high_cap &&
-		    (target_cpu != -1 || best_idle_cpu != -1) &&
-		    (fbt_env->placement_boost == SCHED_BOOST_NONE ||
-		     sched_boost() != FULL_THROTTLE_BOOST ||
-		     (fbt_env->placement_boost == SCHED_BOOST_ON_BIG &&
-		      !next_group_higher_cap)))
+		if (!prefer_idle && !boosted &&
+			(target_cpu != -1 || best_idle_cpu != -1) &&
+			(fbt_env->placement_boost == SCHED_BOOST_NONE ||
+			sched_boost() != FULL_THROTTLE_BOOST ||
+			(fbt_env->placement_boost == SCHED_BOOST_ON_BIG &&
+				!next_group_higher_cap)))
 			break;
 
 		/*
 		 * if we are in prefer_idle and have found an idle cpu,
-		 * break from searching more groups based on the stune.prefer_high_cap and
-		 * group cpu capacity. For !prefer_idle && prefer_high_cap case, don't
+		 * break from searching more groups based on the stune.boost and
+		 * group cpu capacity. For !prefer_idle && boosted case, don't
 		 * iterate lower capacity CPUs unless the task can't be
 		 * accommodated in the higher capacity CPUs.
 		 */
 		if ((prefer_idle && best_idle_cpu != -1) ||
-		    (prefer_high_cap &&
-		     (best_idle_cpu != -1 || target_cpu != -1))) {
-			if (prefer_high_cap) {
+		    (boosted && (best_idle_cpu != -1 || target_cpu != -1))) {
+			if (boosted) {
 				/*
-				 * For prefer_high_cap task, stop searching when an idle
+				 * For boosted task, stop searching when an idle
 				 * cpu is found in mid cluster.
 				 */
 				if ((mid_cap_orig_cpu != -1 &&
@@ -7869,9 +7663,9 @@ static inline int find_best_target(struct task_struct *p, int *backup_cpu,
 		return best_idle_cpu;
 	}
 
-	if (best_idle_cpu != -1 &&
-	    !is_packing_eligible(p, target_cpu, fbt_env, active_cpus_count,
-				 best_idle_cstate, prefer_high_cap)) {
+	if (best_idle_cpu != -1 && !is_packing_eligible(p, target_cpu, fbt_env,
+					active_cpus_count, best_idle_cstate,
+					boosted)) {
 		target_cpu = best_idle_cpu;
 		best_idle_cpu = -1;
 	}
@@ -7899,7 +7693,7 @@ static inline int find_best_target(struct task_struct *p, int *backup_cpu,
 	if (target_cpu != -1 && !idle_cpu(target_cpu) &&
 			best_idle_cpu != -1) {
 		curr_tsk = READ_ONCE(cpu_rq(target_cpu)->curr);
-		if (curr_tsk && schedtune_prefer_high_cap(curr_tsk)) {
+		if (curr_tsk && schedtune_task_boost_rcu_locked(curr_tsk)) {
 			target_cpu = best_idle_cpu;
 		}
 	}
@@ -8175,17 +7969,12 @@ static int find_energy_efficient_cpu(struct sched_domain *sd,
 	struct energy_env *eenv;
 	struct cpumask *rtg_target = find_rtg_target(p);
 	struct find_best_target_env fbt_env;
-	bool need_idle = wake_to_idle(p) || uclamp_latency_sensitive(p);
+	bool need_idle = wake_to_idle(p);
 	int placement_boost = task_boost_policy(p);
 	u64 start_t = 0;
 	int next_cpu = -1, backup_cpu = -1;
-#ifdef CONFIG_SCHED_TUNE
 	int boosted = (schedtune_task_boost(p) > 0);
-	bool prefer_high_cap = schedtune_prefer_high_cap(p);
-#elif  CONFIG_UCLAMP_TASK
-	int boosted = (uclamp_boosted(p) > 0);
-	bool prefer_high_cap = uclamp_latency_sensitive(p);
-#endif
+
 	fbt_env.fastpath = 0;
 
 	if (trace_sched_task_util_enabled())
@@ -8247,11 +8036,8 @@ static int find_energy_efficient_cpu(struct sched_domain *sd,
 		 * all if(prefer_idle) blocks.
 		 */
 		prefer_idle = sched_feat(EAS_PREFER_IDLE) ?
-#ifdef CONFIG_SCHED_TUNE
 				(schedtune_prefer_idle(p) > 0) : 0;
-#elif  CONFIG_UCLAMP_TASK
-				(uclamp_latency_sensitive(p) > 0) : 0;
-#endif
+
 		eenv->max_cpu_count = EAS_CPU_BKP + 1;
 
 		fbt_env.rtg_target = rtg_target;
@@ -8261,7 +8047,7 @@ static int find_energy_efficient_cpu(struct sched_domain *sd,
 		/* Find a cpu with sufficient capacity */
 		target_cpu = find_best_target(p, &eenv->cpu[EAS_CPU_BKP].cpu_id,
 					      boosted, sync_boost, prefer_idle,
-					      &fbt_env, prefer_high_cap);
+					      &fbt_env);
 		if (target_cpu < 0)
 			goto out;
 
@@ -8274,11 +8060,9 @@ static int find_energy_efficient_cpu(struct sched_domain *sd,
 		    p->state == TASK_WAKING)
 			delta = task_util(p);
 #endif
-		if (task_placement_boost_enabled(p) || need_idle ||
-		    prefer_high_cap ||
-		    (rtg_target &&
-		     (!cpumask_test_cpu(prev_cpu, rtg_target) ||
-		      cpumask_test_cpu(target_cpu, rtg_target))) ||
+		if (task_placement_boost_enabled(p) || need_idle || boosted ||
+		    (rtg_target && (!cpumask_test_cpu(prev_cpu, rtg_target) ||
+		    cpumask_test_cpu(target_cpu, rtg_target))) ||
 		    __cpu_overutilized(prev_cpu, delta) ||
 		    !task_fits_max(p, prev_cpu) || cpu_isolated(prev_cpu))
 			goto out;
@@ -8367,12 +8151,7 @@ static inline int wake_energy(struct task_struct *p, int prev_cpu,
 		 * Force prefer-idle tasks into the slow path, this may not happen
 		 * if none of the sd flags matched.
 		 */
-#ifdef CONFIG_SCHED_TUNE
-		if (schedtune_prefer_idle(p) > 0
-#elif  CONFIG_UCLAMP_TASK
-		if (uclamp_latency_sensitive(p) > 0
-#endif
-				&& !sync)
+		if (schedtune_prefer_idle(p) > 0 && !sync)
 			return false;
 	}
 	return true;
@@ -8482,11 +8261,8 @@ pick_cpu:
 			 * indicate that the selection algorithm from mid
 			 * capacity cpu should be used.
 			*/
-			int high_cap_cpu =
-			    cpu_rq(cpu)->rd->mid_cap_orig_cpu != -1 ?
-			     cpu_rq(cpu)->rd->mid_cap_orig_cpu :
-			     cpu_rq(cpu)->rd->max_cap_orig_cpu;
-			bool sync_boost = sync && cpu >= high_cap_cpu;
+			bool sync_boost = sync &&
+				      cpu >= cpu_rq(cpu)->rd->mid_cap_orig_cpu;
 
 			new_cpu = find_energy_efficient_cpu(energy_sd, p, cpu,
 						    prev_cpu, sync, sync_boost);
@@ -10056,10 +9832,9 @@ static inline void update_sg_lb_stats(struct lb_env *env,
 
 		sgs->group_load += weighted_cpuload(rq);
 		sgs->group_util += cpu_util(i);
+		sgs->sum_nr_running += rq->cfs.h_nr_running;
 
 		nr_running = rq->nr_running;
-		sgs->sum_nr_running += nr_running;
-
 		if (nr_running > 1)
 			*sg_status |= SG_OVERLOAD;
 
@@ -11040,7 +10815,7 @@ static int load_balance(int this_cpu, struct rq *this_rq,
 		.sd		= sd,
 		.dst_cpu	= this_cpu,
 		.dst_rq		= this_rq,
-		.dst_grpmask    = group_balance_mask(sd->groups),
+		.dst_grpmask    = sched_group_span(sd->groups),
 		.idle		= idle,
 		.loop_break	= sched_nr_migrate_break,
 		.cpus		= cpus,
@@ -11349,15 +11124,6 @@ get_sd_balance_interval(struct sched_domain *sd, int cpu_busy)
 
 	/* scale ms to jiffies */
 	interval = msecs_to_jiffies(interval);
-
-	/*
-	 * Reduce likelihood of busy balancing at higher domains racing with
-	 * balancing at lower domains by preventing their balancing periods
-	 * from being multiples of each other.
-	 */
-	if (cpu_busy)
-		interval -= 1;
-
 	interval = clamp(interval, 1UL, max_load_balance_interval);
 
 	/*
@@ -11393,33 +11159,6 @@ update_next_balance(struct sched_domain *sd, unsigned long *next_balance)
 	if (time_after(*next_balance, next))
 		*next_balance = next;
 }
-
-#ifdef CONFIG_UCLAMP_TASK
-static inline void task_tick_uclamp(struct rq *rq, struct task_struct *curr)
-{
-	bool can_ignore = uclamp_can_ignore_uclamp_max(rq, curr);
-	bool is_ignored = uclamp_is_ignore_uclamp_max(curr);
-
-	/*
-	 * Condition might have changed since we enqueued the task.
-	 *
-	 * If uclamp_max was ignored, we might need to reverse this condition.
-	 *
-	 * Or, we might have not ignored (becuase uclamp_min != 0 for example)
-	 * but this condition has changed now, so re-evaluate and if necessary
-	 * ignore it.
-	 */
-	if (is_ignored && !can_ignore) {
-		uclamp_reset_ignore_uclamp_max(curr);
-		uclamp_rq_inc_id(rq, curr, UCLAMP_MAX);
-	} else if (!is_ignored && can_ignore) {
-		uclamp_set_ignore_uclamp_max(curr);
-		uclamp_rq_dec_id(rq, curr, UCLAMP_MAX);
-	}
-}
-#else
-static inline void task_tick_uclamp(struct rq *rq, struct task_struct *curr) {}
-#endif
 
 #ifdef CONFIG_SCHED_WALT
 static inline bool min_cap_cluster_has_misfit_task(void)
@@ -12301,7 +12040,6 @@ static void task_tick_fair(struct rq *rq, struct task_struct *curr, int queued)
 #endif
 
 	update_overutilized_status(rq);
-	task_tick_uclamp(rq, curr);
 }
 
 /*
@@ -12808,10 +12546,6 @@ const struct sched_class fair_sched_class = {
 
 #ifdef CONFIG_SCHED_WALT
 	.fixup_walt_sched_stats	= walt_fixup_sched_stats_fair,
-#endif
-
-#ifdef CONFIG_UCLAMP_TASK
-	.uclamp_enabled		= 1,
 #endif
 };
 

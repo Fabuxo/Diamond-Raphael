@@ -81,7 +81,7 @@ static int pagecache_write(struct inode *inode, const void *buf, size_t count,
 		size_t n = min_t(size_t, count,
 				 PAGE_SIZE - offset_in_page(pos));
 		struct page *page;
-		void *fsdata = NULL;
+		void *fsdata;
 		void *addr;
 		int res;
 
@@ -245,8 +245,6 @@ static int f2fs_get_verity_descriptor(struct inode *inode, void *buf,
 	if (pos + size < pos || pos + size > inode->i_sb->s_maxbytes ||
 	    pos < f2fs_verity_metadata_pos(inode) || size > INT_MAX) {
 		f2fs_warn(F2FS_I_SB(inode), "invalid verity xattr");
-		f2fs_handle_error(F2FS_I_SB(inode),
-				ERROR_CORRUPTED_VERITY_XATTR);
 		return -EFSCORRUPTED;
 	}
 	if (buf_size) {
@@ -276,7 +274,7 @@ static void f2fs_merkle_tree_readahead(struct address_space *mapping,
 
 	for (index = start_index; index < start_index + count; index++) {
 		rcu_read_lock();
-		page = radix_tree_lookup(&mapping->page_tree, index);
+		page = radix_tree_lookup(&mapping->i_pages, index);
 		rcu_read_unlock();
 		if (!page || radix_tree_exceptional_entry(page)) {
 			page = __page_cache_alloc(readahead_gfp_mask(mapping));
