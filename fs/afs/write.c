@@ -506,11 +506,17 @@ static int afs_writepages_region(struct address_space *mapping,
 
 		_debug("wback %lx", page->index);
 
-		/*
-		 * at this point we hold neither the i_pages lock nor the
-		 * page lock: the page may be truncated or invalidated
-		 * (changing page->mapping to NULL), or even swizzled
-		 * back from swapper_space to tmpfs file mapping
+		if (page->index > end) {
+			*_next = index;
+			put_page(page);
+			_leave(" = 0 [%lx]", *_next);
+			return 0;
+		}
+
+		/* at this point we hold neither mapping->tree_lock nor lock on
+		 * the page itself: the page may be truncated or invalidated
+		 * (changing page->mapping to NULL), or even swizzled back from
+		 * swapper_space to tmpfs file mapping
 		 */
 		lock_page(page);
 

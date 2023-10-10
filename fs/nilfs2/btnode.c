@@ -210,9 +210,9 @@ retry:
 				       (unsigned long long)oldkey,
 				       (unsigned long long)newkey);
 
-		xa_lock_irq(&btnc->i_pages);
-		err = radix_tree_insert(&btnc->i_pages, newkey, obh->b_page);
-		xa_unlock_irq(&btnc->i_pages);
+		spin_lock_irq(&btnc->tree_lock);
+		err = radix_tree_insert(&btnc->page_tree, newkey, obh->b_page);
+		spin_unlock_irq(&btnc->tree_lock);
 		/*
 		 * Note: page->index will not change to newkey until
 		 * nilfs_btnode_commit_change_key() will be called.
@@ -268,11 +268,11 @@ void nilfs_btnode_commit_change_key(struct address_space *btnc,
 				       (unsigned long long)newkey);
 		mark_buffer_dirty(obh);
 
-		xa_lock_irq(&btnc->i_pages);
-		radix_tree_delete(&btnc->i_pages, oldkey);
-		radix_tree_tag_set(&btnc->i_pages, newkey,
+		spin_lock_irq(&btnc->tree_lock);
+		radix_tree_delete(&btnc->page_tree, oldkey);
+		radix_tree_tag_set(&btnc->page_tree, newkey,
 				   PAGECACHE_TAG_DIRTY);
-		xa_unlock_irq(&btnc->i_pages);
+		spin_unlock_irq(&btnc->tree_lock);
 
 		opage->index = obh->b_blocknr = newkey;
 		unlock_page(opage);
@@ -300,9 +300,9 @@ void nilfs_btnode_abort_change_key(struct address_space *btnc,
 		return;
 
 	if (nbh == NULL) {	/* blocksize == pagesize */
-		xa_lock_irq(&btnc->i_pages);
-		radix_tree_delete(&btnc->i_pages, newkey);
-		xa_unlock_irq(&btnc->i_pages);
+		spin_lock_irq(&btnc->tree_lock);
+		radix_tree_delete(&btnc->page_tree, newkey);
+		spin_unlock_irq(&btnc->tree_lock);
 		unlock_page(ctxt->bh->b_page);
 	} else {
 		/*

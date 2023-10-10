@@ -347,19 +347,15 @@ void inc_nlink(struct inode *inode)
 }
 EXPORT_SYMBOL(inc_nlink);
 
-static void __address_space_init_once(struct address_space *mapping)
+void address_space_init_once(struct address_space *mapping)
 {
-	INIT_RADIX_TREE(&mapping->i_pages, GFP_ATOMIC | __GFP_ACCOUNT);
+	memset(mapping, 0, sizeof(*mapping));
+	INIT_RADIX_TREE(&mapping->page_tree, GFP_ATOMIC | __GFP_ACCOUNT);
+	spin_lock_init(&mapping->tree_lock);
 	init_rwsem(&mapping->i_mmap_rwsem);
 	INIT_LIST_HEAD(&mapping->private_list);
 	spin_lock_init(&mapping->private_lock);
 	mapping->i_mmap = RB_ROOT_CACHED;
-}
-
-void address_space_init_once(struct address_space *mapping)
-{
-	memset(mapping, 0, sizeof(*mapping));
-	__address_space_init_once(mapping);
 }
 EXPORT_SYMBOL(address_space_init_once);
 
@@ -505,14 +501,14 @@ void clear_inode(struct inode *inode)
 {
 	might_sleep();
 	/*
-	 * We have to cycle the i_pages lock here because reclaim can be in the
+	 * We have to cycle tree_lock here because reclaim can be still in the
 	 * process of removing the last page (in __delete_from_page_cache())
-	 * and we must not free the mapping under it.
+	 * and we must not free mapping under it.
 	 */
-	xa_lock_irq(&inode->i_data.i_pages);
+	spin_lock_irq(&inode->i_data.tree_lock);
 	BUG_ON(inode->i_data.nrpages);
 	BUG_ON(inode->i_data.nrexceptional);
-	xa_unlock_irq(&inode->i_data.i_pages);
+	spin_unlock_irq(&inode->i_data.tree_lock);
 	BUG_ON(!list_empty(&inode->i_data.private_list));
 	BUG_ON(!(inode->i_state & I_FREEING));
 	BUG_ON(inode->i_state & I_CLEAR);
