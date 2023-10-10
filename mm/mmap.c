@@ -2590,7 +2590,7 @@ int expand_downwards(struct vm_area_struct *vma,
 	prev = vma->vm_prev;
 	/* Check that both stack segments have the same anon_vma? */
 	if (prev && !(prev->vm_flags & VM_GROWSDOWN) &&
-			vma_is_accessible(prev)) {
+			(prev->vm_flags & (VM_WRITE|VM_READ|VM_EXEC))) {
 		if (address - prev->vm_end < stack_guard_gap)
 			return -ENOMEM;
 	}
