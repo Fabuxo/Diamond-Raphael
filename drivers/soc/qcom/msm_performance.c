@@ -1,14 +1,6 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2014-2018, The Linux Foundation. All rights reserved.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 and
- * only version 2 as published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * Copyright (c) 2016-2019, The Linux Foundation. All rights reserved.
  */
 
 #include <linux/init.h>
@@ -84,13 +76,15 @@ static int set_cpu_min_freq(const char *buf, const struct kernel_param *kp)
 	for (i = 0; i < ntokens; i += 2) {
 		if (sscanf(cp, "%u:%u", &cpu, &val) != 2)
 			return -EINVAL;
-		if (cpu > (num_present_cpus() - 1))
-			return -EINVAL;
+		if (cpu >= nr_cpu_ids)
+			break;
 
-		i_cpu_stats = &per_cpu(msm_perf_cpu_stats, cpu);
+		if (cpu_possible(cpu)) {
+			i_cpu_stats = &per_cpu(msm_perf_cpu_stats, cpu);
 
-		i_cpu_stats->min = val;
-		cpumask_set_cpu(cpu, limit_mask);
+			i_cpu_stats->min = val;
+			cpumask_set_cpu(cpu, limit_mask);
+		}
 
 		cp = strnchr(cp, strlen(cp), ' ');
 		cp++;
@@ -161,14 +155,15 @@ static int set_cpu_max_freq(const char *buf, const struct kernel_param *kp)
 	for (i = 0; i < ntokens; i += 2) {
 		if (sscanf(cp, "%u:%u", &cpu, &val) != 2)
 			return -EINVAL;
-		if (cpu > (num_present_cpus() - 1))
-			return -EINVAL;
+		if (cpu >= nr_cpu_ids)
+			break;
 
-		i_cpu_stats = &per_cpu(msm_perf_cpu_stats, cpu);
+		if (cpu_possible(cpu)) {
+			i_cpu_stats = &per_cpu(msm_perf_cpu_stats, cpu);
 
-		i_cpu_stats->max = val;
-		cpumask_set_cpu(cpu, limit_mask);
-
+			i_cpu_stats->max = val;
+			cpumask_set_cpu(cpu, limit_mask);
+		}
 		cp = strnchr(cp, strlen(cp), ' ');
 		cp++;
 	}
