@@ -58,6 +58,13 @@ class ModuleViewModel : ViewModel() {
         }
     }
 
+    var isNeedRefresh by mutableStateOf(false)
+        private set
+
+    fun markNeedRefresh() {
+        isNeedRefresh = true
+    }
+
     fun fetchModuleList() {
         viewModelScope.launch(Dispatchers.IO) {
             isRefreshing = true
@@ -80,17 +87,19 @@ class ModuleViewModel : ViewModel() {
                     .map { obj ->
                         ModuleInfo(
                             obj.getString("id"),
-                            obj.getString("name"),
+
+                            obj.optString("name"),
                             obj.optString("author", "Unknown"),
                             obj.optString("version", "Unknown"),
                             obj.optInt("versionCode", 0),
-                            obj.getString("description"),
+                            obj.optString("description"),
                             obj.getBoolean("enabled"),
                             obj.getBoolean("update"),
                             obj.getBoolean("remove"),
-                            obj.optString("updateJson", "")
+                            obj.optString("updateJson")
                         )
                     }.toList()
+                isNeedRefresh = false
             }.onFailure { e ->
                 Log.e(TAG, "fetchModuleList: ", e)
                 isRefreshing = false
@@ -106,56 +115,46 @@ class ModuleViewModel : ViewModel() {
         }
     }
 
-    fun checkUpdate(m: ModuleInfo, callback: (String?) -> Unit) {
+    fun checkUpdate(m: ModuleInfo): Triple<String, String, String> {
+        val empty = Triple("", "", "")
         if (m.updateJson.isEmpty() || m.remove || m.update || !m.enabled) {
-            callback(null)
-            return
+            return empty
         }
-        viewModelScope.launch(Dispatchers.IO) {
-            // download updateJson
-            val result = kotlin.runCatching {
-                val url = m.updateJson
-                Log.i(TAG, "checkUpdate url: $url")
-                val response = okhttp3.OkHttpClient()
-                    .newCall(
+        // download updateJson
+        val result = kotlin.runCatching {
+            val url = m.updateJson
+            Log.i(TAG, "checkUpdate url: $url")
+            val response = okhttp3.OkHttpClient()
+                .newCall(
                     okhttp3.Request.Builder()
                         .url(url)
                         .build()
                 ).execute()
-                Log.d(TAG, "checkUpdate code: ${response.code}")
-                if (response.isSuccessful) {
-                    response.body?.string() ?: ""
-                } else {
-                    ""
-                }
-            }.getOrDefault("")
-            Log.i(TAG, "checkUpdate result: $result")
-
-            if (result.isEmpty()) {
-                callback(null)
-                return@launch
+            Log.d(TAG, "checkUpdate code: ${response.code}")
+            if (response.isSuccessful) {
+                response.body?.string() ?: ""
+            } else {
+                ""
             }
+        }.getOrDefault("")
+        Log.i(TAG, "checkUpdate result: $result")
 
-            val updateJson = kotlin.runCatching {
-                JSONObject(result)
-            }.getOrNull()
-
-            if (updateJson == null) {
-                callback(null)
-                return@launch
-            }
-
-            val version = updateJson.optString("version", "")
-            val versionCode = updateJson.optInt("versionCode", 0)
-            val zipUrl = updateJson.optString("zipUrl", "")
-            val changelog = updateJson.optString("changelog", "")
-            if (versionCode <= m.versionCode || zipUrl.isEmpty()) {
-                callback(null)
-                return@launch
-            }
-
-            callback(zipUrl)
+        if (result.isEmpty()) {
+            return empty
         }
-    }
 
+        val updateJson = kotlin.runCatching {
+            JSONObject(result)
+        }.getOrNull() ?: return empty
+
+        val version = updateJson.optString("version", "")
+        val versionCode = updateJson.optInt("versionCode", 0)
+        val zipUrl = updateJson.optString("zipUrl", "")
+        val changelog = updateJson.optString("changelog", "")
+        if (versionCode <= m.versionCode || zipUrl.isEmpty()) {
+            return empty
+        }
+
+        return Triple(zipUrl, version, changelog)
+    }
 }

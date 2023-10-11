@@ -23,16 +23,18 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.ramcosta.composedestinations.annotation.Destination
 import com.ramcosta.composedestinations.annotation.RootNavGraph
 import com.ramcosta.composedestinations.navigation.DestinationsNavigator
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import me.weishu.kernelsu.*
 import me.weishu.kernelsu.R
+import me.weishu.kernelsu.ui.component.ConfirmDialog
+import me.weishu.kernelsu.ui.component.ConfirmResult
 import me.weishu.kernelsu.ui.screen.destinations.SettingScreenDestination
 import me.weishu.kernelsu.ui.util.*
 
@@ -72,6 +74,7 @@ fun HomeScreen(navigator: DestinationsNavigator) {
             DonateCard()
             LearnMoreCard()
             Spacer(Modifier)
+            ConfirmDialog()
         }
     }
 }
@@ -79,22 +82,37 @@ fun HomeScreen(navigator: DestinationsNavigator) {
 @Composable
 fun UpdateCard() {
     val context = LocalContext.current
-    val newVersion by produceState(initialValue = 0 to "") {
+    val newVersion by produceState(initialValue = Triple(0, "", "")) {
         value = withContext(Dispatchers.IO) { checkNewVersion() }
     }
     val currentVersionCode = getManagerVersion(context).second
     val newVersionCode = newVersion.first
     val newVersionUrl = newVersion.second
+    val changelog = newVersion.third
     if (newVersionCode <= currentVersionCode) {
         return
     }
 
     val uriHandler = LocalUriHandler.current
+    val dialogHost = LocalDialogHost.current
+    val title = stringResource(id = R.string.module_changelog)
+    val updateText = stringResource(id = R.string.module_update)
+    val scope = rememberCoroutineScope()
     WarningCard(
         message = stringResource(id = R.string.new_version_available).format(newVersionCode),
         MaterialTheme.colorScheme.outlineVariant
     ) {
-        uriHandler.openUri(newVersionUrl)
+        scope.launch {
+            if (changelog.isEmpty() || dialogHost.showConfirm(
+                    title = title,
+                    content = changelog,
+                    markdown = true,
+                    confirm = updateText,
+                ) == ConfirmResult.Confirmed
+            ) {
+                uriHandler.openUri(newVersionUrl)
+            }
+        }
     }
 }
 
@@ -232,7 +250,7 @@ private fun StatusCard(kernelVersion: KernelVersion, ksuVersion: Int?) {
 
 @Composable
 fun WarningCard(
-    message: String, color: Color = MaterialTheme.colorScheme.error, onClick: () -> Unit = {}
+    message: String, color: Color = MaterialTheme.colorScheme.error, onClick: (() -> Unit)? = null
 ) {
     ElevatedCard(
         colors = CardDefaults.elevatedCardColors(
@@ -242,16 +260,12 @@ fun WarningCard(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
+                .then(onClick?.let { Modifier.clickable { it() } } ?: Modifier)
                 .padding(24.dp)
-                .clickable {
-                    onClick()
-                }, verticalAlignment = Alignment.CenterVertically
         ) {
-            Column() {
-                Text(
-                    text = message, style = MaterialTheme.typography.bodyMedium
-                )
-            }
+            Text(
+                text = message, style = MaterialTheme.typography.bodyMedium
+            )
         }
     }
 }
@@ -361,5 +375,17 @@ private fun StatusCardPreview() {
         StatusCard(KernelVersion(5, 10, 101), 1)
         StatusCard(KernelVersion(5, 10, 101), null)
         StatusCard(KernelVersion(4, 10, 101), null)
+    }
+}
+
+@Preview
+@Composable
+private fun WarningCardPreview() {
+    Column {
+        WarningCard(message = "Warning message")
+        WarningCard(
+            message = "Warning message ",
+            MaterialTheme.colorScheme.outlineVariant,
+            onClick = {})
     }
 }
