@@ -25,13 +25,9 @@ ccflags-y += -Ofast
 # Force -O2 to avoid libgcc dependencies
 CFLAGS_REMOVE_vgettimeofday.o = -pg -Os
 CFLAGS_vgettimeofday.o = -fPIC
-ifeq ($(cc-name),clang)
-CFLAGS_vgettimeofday.o = -Ofast
-else
 CFLAGS_vgettimeofday.o = -O2
 CFLAGS_vgettimeofday.o += -mcmodel=tiny
 CFLAGS_vgettimeofday.o += -fasynchronous-unwind-tables
-endif
 
 CFLAGS_REMOVE_vgettimeofday.o += $(CC_FLAGS_SCS)
 
