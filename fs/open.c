@@ -169,7 +169,7 @@ COMPAT_SYSCALL_DEFINE2(truncate, const char __user *, path, compat_off_t, length
 }
 #endif
 
-static long do_sys_ftruncate(unsigned int fd, loff_t length, int small)
+long do_sys_ftruncate(unsigned int fd, loff_t length, int small)
 {
 	struct inode *inode;
 	struct dentry *dentry;
@@ -720,11 +720,6 @@ out_fput:
 	fdput(f);
 out:
 	return error;
-}
-
-SYSCALL_DEFINE3(fchown, unsigned int, fd, uid_t, user, gid_t, group)
-{
-	return ksys_fchown(fd, user, group);
 }
 
 static int do_dentry_open(struct file *f,
