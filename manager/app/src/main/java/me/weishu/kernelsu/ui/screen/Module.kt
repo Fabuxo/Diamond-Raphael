@@ -45,6 +45,7 @@ import me.weishu.kernelsu.ui.component.LoadingDialog
 import me.weishu.kernelsu.ui.screen.destinations.InstallScreenDestination
 import me.weishu.kernelsu.ui.util.*
 import me.weishu.kernelsu.ui.viewmodel.ModuleViewModel
+import okhttp3.OkHttpClient
 
 @Destination
 @Composable
@@ -52,7 +53,7 @@ fun ModuleScreen(navigator: DestinationsNavigator) {
     val viewModel = viewModel<ModuleViewModel>()
 
     LaunchedEffect(Unit) {
-        if (viewModel.moduleList.isEmpty()) {
+        if (viewModel.moduleList.isEmpty() || viewModel.isNeedRefresh) {
             viewModel.fetchModuleList()
         }
     }
@@ -79,6 +80,8 @@ fun ModuleScreen(navigator: DestinationsNavigator) {
                 val uri = data.data ?: return@rememberLauncherForActivityResult
 
                 navigator.navigate(InstallScreenDestination(uri))
+
+                viewModel.markNeedRefresh()
 
                 Log.i("ModuleScreen", "select zip result: ${it.data}")
             }
@@ -143,9 +146,67 @@ private fun ModuleList(
     val uninstall = stringResource(id = R.string.uninstall)
     val cancel = stringResource(id = android.R.string.cancel)
     val moduleUninstallConfirm = stringResource(id = R.string.module_uninstall_confirm)
+    val updateText = stringResource(R.string.module_update)
+    val changelogText = stringResource(R.string.module_changelog)
+    val downloadingText = stringResource(R.string.module_downloading)
+    val startDownloadingText = stringResource(R.string.module_start_downloading)
 
     val dialogHost = LocalDialogHost.current
     val snackBarHost = LocalSnackbarHost.current
+    val context = LocalContext.current
+
+    suspend fun onModuleUpdate(
+        module: ModuleViewModel.ModuleInfo,
+        changelogUrl: String,
+        downloadUrl: String,
+        fileName: String
+    ) {
+        val changelog = dialogHost.withLoading {
+            withContext(Dispatchers.IO) {
+                OkHttpClient().newCall(
+                    okhttp3.Request.Builder().url(changelogUrl).build()
+                ).execute().body!!.string()
+            }
+        }
+
+        if (changelog.isNotEmpty()) {
+            // changelog is not empty, show it and wait for confirm
+            val confirmResult = dialogHost.showConfirm(
+                changelogText,
+                content = changelog,
+                markdown = true,
+                confirm = updateText,
+            )
+
+            if (confirmResult != ConfirmResult.Confirmed) {
+                return
+            }
+        }
+
+        withContext(Dispatchers.Main) {
+            Toast.makeText(
+                context,
+                startDownloadingText.format(module.name),
+                Toast.LENGTH_SHORT
+            ).show()
+        }
+
+        val downloading = downloadingText.format(module.name)
+        withContext(Dispatchers.IO) {
+            download(
+                context,
+                downloadUrl,
+                fileName,
+                downloading,
+                onDownloaded = onInstallModule,
+                onDownloading = {
+                    launch(Dispatchers.Main) {
+                        Toast.makeText(context, downloading, Toast.LENGTH_SHORT).show()
+                    }
+                }
+            )
+        }
+    }
 
     suspend fun onModuleUninstall(module: ModuleViewModel.ModuleInfo) {
         val confirmResult = dialogHost.showConfirm(
@@ -186,42 +247,60 @@ private fun ModuleList(
     val refreshState = rememberPullRefreshState(refreshing = viewModel.isRefreshing,
         onRefresh = { viewModel.fetchModuleList() })
     Box(modifier.pullRefresh(refreshState)) {
-        if (viewModel.isOverlayAvailable) {
-            val context = LocalContext.current
+        val context = LocalContext.current
 
-            LazyColumn(
-                modifier = Modifier.fillMaxSize(),
-                verticalArrangement = Arrangement.spacedBy(16.dp),
-                contentPadding = remember {
-                    PaddingValues(
-                        start = 16.dp,
-                        top = 16.dp,
-                        end = 16.dp,
-                        bottom = 16.dp + 16.dp + 56.dp /*  Scaffold Fab Spacing + Fab container height */
-                    )
-                },
-            ) {
-                val isEmpty = viewModel.moduleList.isEmpty()
-                if (isEmpty) {
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+            contentPadding = remember {
+                PaddingValues(
+                    start = 16.dp,
+                    top = 16.dp,
+                    end = 16.dp,
+                    bottom = 16.dp + 16.dp + 56.dp /*  Scaffold Fab Spacing + Fab container height */
+                )
+            },
+        ) {
+            when {
+                !viewModel.isOverlayAvailable -> {
                     item {
                         Box(
-                            modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center
+                            modifier = Modifier.fillParentMaxSize(),
+                            contentAlignment = Alignment.Center
                         ) {
-                            Text(stringResource(R.string.module_empty))
+                            Text(
+                                stringResource(R.string.module_overlay_fs_not_available),
+                                textAlign = TextAlign.Center
+                            )
                         }
                     }
-                } else {
+                }
+
+                viewModel.moduleList.isEmpty() -> {
+                    item {
+                        Box(
+                            modifier = Modifier.fillParentMaxSize(),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                stringResource(R.string.module_empty),
+                                textAlign = TextAlign.Center
+                            )
+                        }
+                    }
+                }
+
+                else -> {
                     items(viewModel.moduleList) { module ->
                         var isChecked by rememberSaveable(module) { mutableStateOf(module.enabled) }
                         val scope = rememberCoroutineScope()
-                        val updateUrl by produceState(initialValue = "") {
-                            viewModel.checkUpdate(module) { value = it.orEmpty() }
+                        val updatedModule by produceState(initialValue = Triple("", "", "")) {
+                            scope.launch(Dispatchers.IO) {
+                                value = viewModel.checkUpdate(module)
+                            }
                         }
 
-                        val downloadingText = stringResource(R.string.module_downloading)
-                        val startDownloadingText = stringResource(R.string.module_start_downloading)
-
-                        ModuleItem(module, isChecked, updateUrl, onUninstall = {
+                        ModuleItem(module, isChecked, updatedModule.first, onUninstall = {
                             scope.launch { onModuleUninstall(module) }
                         }, onCheckChanged = {
                             scope.launch {
@@ -246,26 +325,14 @@ private fun ModuleList(
                                 }
                             }
                         }, onUpdate = {
-
                             scope.launch {
-                                Toast.makeText(
-                                    context,
-                                    startDownloadingText.format(module.name),
-                                    Toast.LENGTH_SHORT
-                                ).show()
+                                onModuleUpdate(
+                                    module,
+                                    updatedModule.third,
+                                    updatedModule.first,
+                                    "${module.name}-${updatedModule.second}.zip"
+                                )
                             }
-
-                            val downloading = downloadingText.format(module.name)
-                            download(
-                                context,
-                                updateUrl,
-                                "${module.name}-${module.version}.zip",
-                                downloading,
-                                onDownloaded = onInstallModule,
-                                onDownloading = {
-                                    Toast.makeText(context, downloading, Toast.LENGTH_SHORT).show()
-                                }
-                            )
                         })
 
                         // fix last item shadow incomplete in LazyColumn
@@ -273,14 +340,9 @@ private fun ModuleList(
                     }
                 }
             }
-
-            DownloadListener(context, onInstallModule)
-
-        } else {
-            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text(stringResource(R.string.module_overlay_fs_not_available))
-            }
         }
+
+        DownloadListener(context, onInstallModule)
 
         PullRefreshIndicator(
             refreshing = viewModel.isRefreshing, state = refreshState, modifier = Modifier.align(
