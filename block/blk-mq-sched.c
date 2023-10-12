@@ -54,31 +54,34 @@ void blk_mq_sched_assign_ioc(struct request *rq, struct bio *bio)
  * Mark a hardware queue as needing a restart. For shared queues, maintain
  * a count of how many hardware queues are marked for restart.
  */
-void blk_mq_sched_mark_restart_hctx(struct blk_mq_hw_ctx *hctx)
+static void blk_mq_sched_mark_restart_hctx(struct blk_mq_hw_ctx *hctx)
 {
 	if (test_bit(BLK_MQ_S_SCHED_RESTART, &hctx->state))
 		return;
 
-	set_bit(BLK_MQ_S_SCHED_RESTART, &hctx->state);
-}
-EXPORT_SYMBOL_GPL(blk_mq_sched_mark_restart_hctx);
+	if (hctx->flags & BLK_MQ_F_TAG_SHARED) {
+		struct request_queue *q = hctx->queue;
 
-void blk_mq_sched_restart(struct blk_mq_hw_ctx *hctx)
+		if (!test_and_set_bit(BLK_MQ_S_SCHED_RESTART, &hctx->state))
+			atomic_inc(&q->shared_hctx_restart);
+	} else
+		set_bit(BLK_MQ_S_SCHED_RESTART, &hctx->state);
+}
+
+static bool blk_mq_sched_restart_hctx(struct blk_mq_hw_ctx *hctx)
 {
 	if (!test_bit(BLK_MQ_S_SCHED_RESTART, &hctx->state))
-		return;
-	clear_bit(BLK_MQ_S_SCHED_RESTART, &hctx->state);
+		return false;
 
-	/*
-	 * Order clearing SCHED_RESTART and list_empty_careful(&hctx->dispatch)
-	 * in blk_mq_run_hw_queue(). Its pair is the barrier in
-	 * blk_mq_dispatch_rq_list(). So dispatch code won't see SCHED_RESTART,
-	 * meantime new request added to hctx->dispatch is missed to check in
-	 * blk_mq_run_hw_queue().
-	 */
-	smp_mb();
+	if (hctx->flags & BLK_MQ_F_TAG_SHARED) {
+		struct request_queue *q = hctx->queue;
 
-	blk_mq_run_hw_queue(hctx, true);
+		if (test_and_clear_bit(BLK_MQ_S_SCHED_RESTART, &hctx->state))
+			atomic_dec(&q->shared_hctx_restart);
+	} else
+		clear_bit(BLK_MQ_S_SCHED_RESTART, &hctx->state);
+
+	return blk_mq_run_hw_queue(hctx, true);
 }
 
 void blk_mq_sched_dispatch_requests(struct blk_mq_hw_ctx *hctx)
@@ -266,10 +269,89 @@ static bool blk_mq_sched_bypass_insert(struct blk_mq_hw_ctx *hctx,
 		return true;
 	}
 
-	if (has_sched)
+	if (has_sched) {
 		rq->rq_flags |= RQF_SORTED;
+		WARN_ON(rq->tag != -1);
+	}
 
 	return false;
+}
+
+/**
+ * list_for_each_entry_rcu_rr - iterate in a round-robin fashion over rcu list
+ * @pos:    loop cursor.
+ * @skip:   the list element that will not be examined. Iteration starts at
+ *          @skip->next.
+ * @head:   head of the list to examine. This list must have at least one
+ *          element, namely @skip.
+ * @member: name of the list_head structure within typeof(*pos).
+ */
+#define list_for_each_entry_rcu_rr(pos, skip, head, member)		\
+	for ((pos) = (skip);						\
+	     (pos = (pos)->member.next != (head) ? list_entry_rcu(	\
+			(pos)->member.next, typeof(*pos), member) :	\
+	      list_entry_rcu((pos)->member.next->next, typeof(*pos), member)), \
+	     (pos) != (skip); )
+
+/*
+ * Called after a driver tag has been freed to check whether a hctx needs to
+ * be restarted. Restarts @hctx if its tag set is not shared. Restarts hardware
+ * queues in a round-robin fashion if the tag set of @hctx is shared with other
+ * hardware queues.
+ */
+void blk_mq_sched_restart(struct blk_mq_hw_ctx *const hctx)
+{
+	struct blk_mq_tags *const tags = hctx->tags;
+	struct blk_mq_tag_set *const set = hctx->queue->tag_set;
+	struct request_queue *const queue = hctx->queue, *q;
+	struct blk_mq_hw_ctx *hctx2;
+	unsigned int i, j;
+
+	if (set->flags & BLK_MQ_F_TAG_SHARED) {
+		/*
+		 * If this is 0, then we know that no hardware queues
+		 * have RESTART marked. We're done.
+		 */
+		if (!atomic_read(&queue->shared_hctx_restart))
+			return;
+
+		rcu_read_lock();
+		list_for_each_entry_rcu_rr(q, queue, &set->tag_list,
+					   tag_set_list) {
+			queue_for_each_hw_ctx(q, hctx2, i)
+				if (hctx2->tags == tags &&
+				    blk_mq_sched_restart_hctx(hctx2))
+					goto done;
+		}
+		j = hctx->queue_num + 1;
+		for (i = 0; i < queue->nr_hw_queues; i++, j++) {
+			if (j == queue->nr_hw_queues)
+				j = 0;
+			hctx2 = queue->queue_hw_ctx[j];
+			if (hctx2->tags == tags &&
+			    blk_mq_sched_restart_hctx(hctx2))
+				break;
+		}
+done:
+		rcu_read_unlock();
+	} else {
+		blk_mq_sched_restart_hctx(hctx);
+	}
+}
+
+/*
+ * Add flush/fua to the queue. If we fail getting a driver tag, then
+ * punt to the requeue list. Requeue will re-invoke us from a context
+ * that's safe to block from.
+ */
+static void blk_mq_sched_insert_flush(struct blk_mq_hw_ctx *hctx,
+				      struct request *rq, bool can_block)
+{
+	if (blk_mq_get_driver_tag(rq, &hctx, can_block)) {
+		blk_insert_flush(rq);
+		blk_mq_run_hw_queue(hctx, true);
+	} else
+		blk_mq_add_to_requeue_list(rq, false, true);
 }
 
 void blk_mq_sched_insert_request(struct request *rq, bool at_head,
@@ -282,11 +364,9 @@ void blk_mq_sched_insert_request(struct request *rq, bool at_head,
 
 	/* flush rq in flush machinery need to be dispatched directly */
 	if (!(rq->rq_flags & RQF_FLUSH_SEQ) && op_is_flush(rq->cmd_flags)) {
-		blk_insert_flush(rq);
-		goto run;
+		blk_mq_sched_insert_flush(hctx, rq, can_block);
+		return;
 	}
-
-	WARN_ON(e && (rq->tag != -1));
 
 	if (blk_mq_sched_bypass_insert(hctx, !!e, rq))
 		goto run;
