@@ -261,4 +261,4 @@ cond_syscall(sys_pkey_alloc);
 cond_syscall(sys_pkey_free);
 
 /* restartable sequence */
-COND_SYSCALL(rseq);
+cond_syscall(rseq);
