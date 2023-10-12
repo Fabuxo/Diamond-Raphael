@@ -895,12 +895,12 @@ endif
 
 ifdef CONFIG_LTO_CLANG
 ifdef CONFIG_THINLTO
-lto-clang-flags	:= -flto=thin
-LDFLAGS		+= --thinlto-cache-dir=.thinlto-cache
+CC_FLAGS_LTO_CLANG := -flto=thin $(call cc-option, -fsplit-lto-unit)
+KBUILD_LDFLAGS	+= --thinlto-cache-dir=.thinlto-cache
 else
-lto-clang-flags	:= -flto
+CC_FLAGS_LTO_CLANG := -flto
 endif
-lto-clang-flags += -fvisibility=default $(call cc-option, -fsplit-lto-unit)
+CC_FLAGS_LTO_CLANG += -fvisibility=default
 
 KBUILD_LDFLAGS_MODULE += -T scripts/module-lto.lds
 
