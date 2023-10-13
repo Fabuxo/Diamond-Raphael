@@ -1,11 +1,11 @@
-ARCH=x86_64
+ARCH=arm
 
-LLVM_IAS=1
-CROSS_COMPILE=x86_64-linux-gnu-
+CROSS_COMPILE=arm-linux-gnueabi-
 LINUX_GCC_CROSS_COMPILE_PREBUILTS_BIN=prebuilts/gas/linux-x86
 
 FILES="
-arch/x86/boot/bzImage
+arch/arm/boot/Image.gz
+arch/arm/boot/Image
 vmlinux
 System.map
 "
