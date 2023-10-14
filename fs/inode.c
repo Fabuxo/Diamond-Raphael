@@ -1553,7 +1553,6 @@ retry:
 }
 EXPORT_SYMBOL(iput);
 
-#ifdef CONFIG_BLOCK
 /**
  *	bmap	- find a block number in a file
  *	@inode:  inode owning the block number being requested
@@ -1568,16 +1567,14 @@ EXPORT_SYMBOL(iput);
  *	Returns -EINVAL in case of error, 0 otherwise. If mapping falls into a
  *	hole, returns 0 and *block is also set to 0.
  */
-int bmap(struct inode *inode, sector_t *block)
+sector_t bmap(struct inode *inode, sector_t block)
 {
-	if (!inode->i_mapping->a_ops->bmap)
-		return -EINVAL;
-
-	*block = inode->i_mapping->a_ops->bmap(inode->i_mapping, *block);
-	return 0;
+	sector_t res = 0;
+	if (inode->i_mapping->a_ops->bmap)
+		res = inode->i_mapping->a_ops->bmap(inode->i_mapping, block);
+	return res;
 }
 EXPORT_SYMBOL(bmap);
-#endif
 
 /*
  * Update times in overlayed inode from underlying real inode

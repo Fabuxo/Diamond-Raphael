@@ -56,8 +56,7 @@ static ssize_t session_write_kbytes_show(struct ext4_attr *a,
 	if (!sb->s_bdev->bd_part)
 		return snprintf(buf, PAGE_SIZE, "0\n");
 	return snprintf(buf, PAGE_SIZE, "%lu\n",
-			(part_stat_read(sb->s_bdev->bd_part,
-					sectors[STAT_WRITE]) -
+			(part_stat_read(sb->s_bdev->bd_part, sectors[1]) -
 			 sbi->s_sectors_written_start) >> 1);
 }
 
@@ -70,8 +69,7 @@ static ssize_t lifetime_write_kbytes_show(struct ext4_attr *a,
 		return snprintf(buf, PAGE_SIZE, "0\n");
 	return snprintf(buf, PAGE_SIZE, "%llu\n",
 			(unsigned long long)(sbi->s_kbytes_written +
-			((part_stat_read(sb->s_bdev->bd_part,
-					 sectors[STAT_WRITE]) -
+			((part_stat_read(sb->s_bdev->bd_part, sectors[1]) -
 			  EXT4_SB(sb)->s_sectors_written_start) >> 1)));
 }
 
@@ -237,9 +235,6 @@ EXT4_ATTR_FEATURE(casefold);
 EXT4_ATTR_FEATURE(verity);
 #endif
 EXT4_ATTR_FEATURE(metadata_csum_seed);
-#if defined(CONFIG_UNICODE) && defined(CONFIG_FS_ENCRYPTION)
-EXT4_ATTR_FEATURE(encrypted_casefold);
-#endif
 
 static struct attribute *ext4_feat_attrs[] = {
 	ATTR_LIST(lazy_itable_init),
@@ -256,9 +251,6 @@ static struct attribute *ext4_feat_attrs[] = {
 	ATTR_LIST(verity),
 #endif
 	ATTR_LIST(metadata_csum_seed),
-#if defined(CONFIG_UNICODE) && defined(CONFIG_FS_ENCRYPTION)
-	ATTR_LIST(encrypted_casefold),
-#endif
 	NULL,
 };
 
