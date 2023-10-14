@@ -105,7 +105,7 @@ root_schedtune = {
  *    implementation especially for the computation of the per-CPU boost
  *    value
  */
-#define BOOSTGROUPS_COUNT 8
+#define BOOSTGROUPS_COUNT 7
 
 /* Array of configured boostgroups */
 static struct schedtune *allocated_group[BOOSTGROUPS_COUNT] = {
@@ -179,9 +179,18 @@ void restore_cgroup_boost_settings(void)
 
 bool task_sched_boost(struct task_struct *p)
 {
-	struct schedtune *st = task_schedtune(p);
+	struct schedtune *st;
+	bool enabled;
 
-	return st->sched_boost_enabled;
+	if (unlikely(!schedtune_initialized))
+		return false;
+
+	rcu_read_lock();
+	st = task_schedtune(p);
+	enabled = st->sched_boost_enabled;
+	rcu_read_unlock();
+
+	return enabled;
 }
 
 static u64
@@ -561,24 +570,6 @@ int schedtune_task_boost(struct task_struct *p)
 	return task_boost;
 }
 
-/*  The same as schedtune_task_boost except assuming the caller has the rcu read
- *  lock.
- */
-int schedtune_task_boost_rcu_locked(struct task_struct *p)
-{
-	struct schedtune *st;
-	int task_boost;
-
-	if (unlikely(!schedtune_initialized))
-		return 0;
-
-	/* Get task boost value */
-	st = task_schedtune(p);
-	task_boost = st->boost;
-
-	return task_boost;
-}
-
 int schedtune_prefer_idle(struct task_struct *p)
 {
 	struct schedtune *st;
@@ -662,19 +653,6 @@ boost_write(struct cgroup_subsys_state *css, struct cftype *cft,
 	return 0;
 }
 
-static u64 prefer_high_cap_read(struct cgroup_subsys_state *css,
-				struct cftype *cft)
-{
-	return 0;
-}
-
-static int prefer_high_cap_write(struct cgroup_subsys_state *css,
-				 struct cftype *cft, u64 prefer_high_cap)
-{
-	return 0;
-}
-
-
 static struct cftype files[] = {
 #ifdef CONFIG_SCHED_WALT
 	{
@@ -697,11 +675,6 @@ static struct cftype files[] = {
 		.name = "prefer_idle",
 		.read_u64 = prefer_idle_read,
 		.write_u64 = prefer_idle_write,
-	},
-	{
-		.name = "prefer_high_cap",
-		.read_u64 = prefer_high_cap_read,
-		.write_u64 = prefer_high_cap_write,
 	},
 	{ }	/* terminate */
 };

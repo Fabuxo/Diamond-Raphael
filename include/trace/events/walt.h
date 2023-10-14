@@ -444,9 +444,9 @@ TRACE_EVENT(sched_set_boost,
 
 TRACE_EVENT(sched_load_balance_skip_tasks,
 
-	TP_PROTO(int scpu, int dcpu, int grp_type, int pid, unsigned long h_load, unsigned long task_util, unsigned long affinity, unsigned int env_flags),
+	TP_PROTO(int scpu, int dcpu, int grp_type, int pid, unsigned long h_load, unsigned long task_util, unsigned long affinity),
 
-	TP_ARGS(scpu, dcpu, grp_type, pid, h_load, task_util, affinity, env_flags),
+	TP_ARGS(scpu, dcpu, grp_type, pid, h_load, task_util, affinity),
 
 	TP_STRUCT__entry(
 		__field(int,		scpu		)
@@ -458,7 +458,6 @@ TRACE_EVENT(sched_load_balance_skip_tasks,
 		__field(unsigned long,	affinity	)
 		__field(unsigned long,	task_util	)
 		__field(unsigned long,	h_load		)
-		__field(unsigned int,	env_flags)
 	),
 
 	TP_fast_assign(
@@ -471,11 +470,10 @@ TRACE_EVENT(sched_load_balance_skip_tasks,
 		__entry->affinity		= affinity;
 		__entry->task_util		= task_util;
 		__entry->h_load			= h_load;
-		__entry->env_flags		= env_flags;
 	),
 
-	TP_printk("source_cpu=%d util_cum=%lu group_type=%d dest_cpu=%d util_cum=%lu pid=%d affinity=%#lx task_util=%lu task_h_load=%lu flags=%#x",
-		__entry->scpu, __entry->src_util_cum, __entry->grp_type, __entry->dcpu, __entry->dst_util_cum, __entry->pid, __entry->affinity, __entry->task_util, __entry->h_load, __entry->env_flags)
+	TP_printk("source_cpu=%d util_cum=%lu group_type=%d dest_cpu=%d util_cum=%lu pid=%d affinity=%#lx task_util=%lu task_h_load=%lu",
+		__entry->scpu, __entry->src_util_cum, __entry->grp_type, __entry->dcpu, __entry->dst_util_cum, __entry->pid, __entry->affinity, __entry->task_util, __entry->h_load)
 );
 
 DECLARE_EVENT_CLASS(sched_cpu_load,
@@ -585,6 +583,4 @@ TRACE_EVENT(sched_load_to_gov,
 		__entry->sysctl_sched_little_cluster_coloc_fmin_khz,
 		__entry->coloc_boost_load)
 );
-#else
-#define trace_sched_load_balance_skip_tasks(...)
 #endif

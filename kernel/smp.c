@@ -140,8 +140,6 @@ static __always_inline void csd_unlock(struct __call_single_data *csd)
 
 static DEFINE_PER_CPU_SHARED_ALIGNED(call_single_data_t, csd_data);
 
-extern void send_call_function_single_ipi(int cpu);
-
 /*
  * Insert a previously allocated call_single_data_t element
  * for execution on the given CPU. data must already have
@@ -185,7 +183,7 @@ int generic_exec_single(int cpu, struct __call_single_data *csd, smp_call_func_t
 	 * equipped to do the right thing...
 	 */
 	if (llist_add(&csd->llist, &per_cpu(call_single_queue, cpu)))
-		send_call_function_single_ipi(cpu);
+		arch_send_call_function_single_ipi(cpu);
 
 	return 0;
 }
@@ -370,8 +368,6 @@ int smp_call_function_single_async(int cpu, struct __call_single_data *csd)
 {
 	int err = 0;
 
-	migrate_disable();
-
 	/* We could deadlock if we have to wait here with interrupts disabled! */
 	if (WARN_ON_ONCE(csd->flags & CSD_FLAG_LOCK))
 		csd_lock_wait(csd);
@@ -380,7 +376,6 @@ int smp_call_function_single_async(int cpu, struct __call_single_data *csd)
 	smp_wmb();
 
 	err = generic_exec_single(cpu, csd, csd->func, csd->info);
-	migrate_enable();
 
 	return err;
 }

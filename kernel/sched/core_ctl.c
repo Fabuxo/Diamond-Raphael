@@ -746,7 +746,7 @@ static bool eval_need(struct cluster_data *cluster)
 		cluster->active_cpus = get_active_cpu_count(cluster);
 		thres_idx = cluster->active_cpus ? cluster->active_cpus - 1 : 0;
 		list_for_each_entry(c, &cluster->lru, sib) {
-			bool old_is_busy __maybe_unused = c->is_busy;
+			bool old_is_busy = c->is_busy;
 
 			if (c->busy >= cluster->busy_up_thres[thres_idx] ||
 			    sched_cpu_high_irqload(c->cpu))
@@ -1230,6 +1230,8 @@ static int cluster_init(const struct cpumask *mask)
 	if (!dev)
 		return -ENODEV;
 
+	pr_info("Creating CPU group %d\n", first_cpu);
+
 	if (num_clusters == MAX_CLUSTERS) {
 		pr_err("Unsupported number of clusters. Only %u supported\n",
 								MAX_CLUSTERS);
@@ -1258,6 +1260,8 @@ static int cluster_init(const struct cpumask *mask)
 	spin_lock_init(&cluster->pending_lock);
 
 	for_each_cpu(cpu, mask) {
+		pr_info("Init CPU%u state\n", cpu);
+
 		state = &per_cpu(cpu_state, cpu);
 		state->cluster = cluster;
 		state->cpu = cpu;
