@@ -873,7 +873,7 @@ struct rq {
 
 	int cstate, wakeup_latency, wakeup_energy;
 	u64 window_start;
-	s64 cum_window_start;
+	u32 prev_window_size;
 	unsigned long walt_flags;
 
 	u64 cur_irqload;
