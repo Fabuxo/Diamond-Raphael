@@ -23,7 +23,7 @@
 #include <linux/rcupdate.h>
 #include <linux/pid_namespace.h>
 #include <linux/user_namespace.h>
-#include <linux/shmem_fs.h>
+#include <linux/memfd.h>
 #include <linux/compat.h>
 
 #include <asm/poll.h>
@@ -418,7 +418,7 @@ static long do_fcntl(int fd, unsigned int cmd, unsigned long arg,
 		break;
 	case F_ADD_SEALS:
 	case F_GET_SEALS:
-		err = shmem_fcntl(filp, cmd, arg);
+		err = memfd_fcntl(filp, cmd, arg);
 		break;
 	case F_GET_RW_HINT:
 	case F_SET_RW_HINT:
