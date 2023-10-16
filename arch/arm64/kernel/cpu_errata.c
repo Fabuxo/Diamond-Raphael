@@ -287,6 +287,28 @@ static int __init ssbd_cfg(char *buf)
 }
 early_param("ssbd", ssbd_cfg);
 
+void __init arm64_update_smccc_conduit(struct alt_instr *alt,
+				       __le32 *origptr, __le32 *updptr,
+				       int nr_inst)
+{
+	u32 insn;
+
+	BUG_ON(nr_inst != 1);
+
+	switch (psci_ops.conduit) {
+	case PSCI_CONDUIT_HVC:
+		insn = aarch64_insn_get_hvc_value();
+		break;
+	case PSCI_CONDUIT_SMC:
+		insn = aarch64_insn_get_smc_value();
+		break;
+	default:
+		return;
+	}
+
+	*updptr = cpu_to_le32(insn);
+}
+
 void __init arm64_enable_wa2_handling(struct alt_instr *alt,
 				      __le32 *origptr, __le32 *updptr,
 				      int nr_inst)
@@ -330,31 +352,6 @@ void arm64_set_ssbd_mitigation(bool state)
 		break;
 	}
 }
-
-#if defined(CONFIG_MITIGATE_SPECTRE_BRANCH_HISTORY) || \
-	defined(CONFIG_ARM64_SSBD)
-void __init arm64_update_smccc_conduit(struct alt_instr *alt,
-				       __le32 *origptr, __le32 *updptr,
-				       int nr_inst)
-{
-	u32 insn;
-
-	BUG_ON(nr_inst != 1);
-
-	switch (psci_ops.conduit) {
-	case PSCI_CONDUIT_HVC:
-		insn = aarch64_insn_get_hvc_value();
-		break;
-	case PSCI_CONDUIT_SMC:
-		insn = aarch64_insn_get_smc_value();
-		break;
-	default:
-		return;
-	}
-
-	*updptr = cpu_to_le32(insn);
-}
-#endif /* CONFIG_MITIGATE_SPECTRE_BRANCH_HISTORY || CONFIG_ARM64_SSBD */
 
 static bool has_ssbd_mitigation(const struct arm64_cpu_capabilities *entry,
 				    int scope)
@@ -481,6 +478,22 @@ static const struct midr_range arm64_ssb_cpus[] = {
 	{},
 };
 
+#ifdef CONFIG_ARM64_ERRATUM_1463225
+DEFINE_PER_CPU(int, __in_cortex_a76_erratum_1463225_wa);
+
+static bool
+has_cortex_a76_erratum_1463225(const struct arm64_cpu_capabilities *entry,
+			       int scope)
+{
+	u32 midr = read_cpuid_id();
+	/* Cortex-A76 r0p0 - r3p1 */
+	struct midr_range range = MIDR_RANGE(MIDR_CORTEX_A76, 0, 0, 3, 1);
+
+	WARN_ON(scope != SCOPE_LOCAL_CPU || preemptible());
+	return is_midr_in_range(midr, &range) && is_kernel_in_hyp_mode();
+}
+#endif
+
 #define CAP_MIDR_RANGE(model, v_min, r_min, v_max, r_max)	\
 	.matches = is_affected_midr_range,			\
 	.midr_range = MIDR_RANGE(model, v_min, r_min, v_max, r_max)
@@ -529,13 +542,6 @@ static const struct midr_range spectre_v2_safe_list[] = {
 	MIDR_ALL_VERSIONS(MIDR_CORTEX_A35),
 	MIDR_ALL_VERSIONS(MIDR_CORTEX_A53),
 	MIDR_ALL_VERSIONS(MIDR_CORTEX_A55),
-	MIDR_ALL_VERSIONS(MIDR_KRYO3S),
-	MIDR_ALL_VERSIONS(MIDR_KRYO4S),
-	MIDR_ALL_VERSIONS(MIDR_KRYO2XX_SILVER),
-	MIDR_RANGE(MIDR_KRYO4G, 0, 0, 12, 13),
-	MIDR_RANGE(MIDR_KRYO4G, 13, 15,
-		   (MIDR_VARIANT_MASK >> MIDR_VARIANT_SHIFT),
-		   MIDR_REVISION_MASK),
 	{ /* sentinel */ }
 };
 
@@ -626,6 +632,7 @@ const struct arm64_cpu_capabilities arm64_errata[] = {
 				  1, 2),
 	},
 #endif
+
 #ifdef CONFIG_ARM64_ERRATUM_834220
 	{
 	/* Cortex-A57 r0p0 - r1p2 */
@@ -636,6 +643,19 @@ const struct arm64_cpu_capabilities arm64_errata[] = {
 				  1, 2),
 	},
 #endif
+
+#ifdef CONFIG_ARM64_ERRATUM_1188873
+
+static const struct midr_range arm64_workaround_1188873_cpus[] = {
+	/* Cortex-A76 r0p0 to r2p0 */
+	MIDR_RANGE(MIDR_CORTEX_A76, 0, 0, 2, 0),
+	/* Kryo-4G r15p14 */
+	MIDR_RANGE(MIDR_KRYO4G, 15, 14, 15, 14),
+	{},
+};
+
+#endif
+
 #ifdef CONFIG_ARM64_ERRATUM_845719
 	{
 	/* Cortex-A53 r0p[01234] */
@@ -777,19 +797,7 @@ const struct arm64_cpu_capabilities arm64_errata[] = {
 	{
 		.desc = "ARM erratum 1188873",
 		.capability = ARM64_WORKAROUND_1188873,
-		/* Cortex-A76 r0p0 to r2p0 */
-		ERRATA_MIDR_RANGE(MIDR_CORTEX_A76,
-				  0, 0,
-				  2, 0),
-
-	},
-	{
-		.desc = "ARM erratum 1188873",
-		.capability = ARM64_WORKAROUND_1188873,
-		/* Kryo-4G r15p14 */
-		ERRATA_MIDR_RANGE(MIDR_KRYO4G,
-				  15, 14,
-				  15, 15),
+		ERRATA_MIDR_RANGE_LIST(arm64_workaround_1188873_cpus),
 	},
 #endif
 	{
@@ -805,6 +813,14 @@ const struct arm64_cpu_capabilities arm64_errata[] = {
 		.capability = ARM64_WORKAROUND_1742098,
 		CAP_MIDR_RANGE_LIST(broken_aarch32_aes),
 		.type = ARM64_CPUCAP_LOCAL_CPU_ERRATUM,
+	},
+#endif
+#ifdef CONFIG_ARM64_ERRATUM_1463225
+	{
+		.desc = "ARM erratum 1463225",
+		.capability = ARM64_WORKAROUND_1463225,
+		.type = ARM64_CPUCAP_LOCAL_CPU_ERRATUM,
+		.matches = has_cortex_a76_erratum_1463225,
 	},
 #endif
 	{

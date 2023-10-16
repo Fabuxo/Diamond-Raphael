@@ -192,6 +192,7 @@ static const struct arm64_ftr_bits ftr_id_aa64mmfr1[] = {
 };
 
 static const struct arm64_ftr_bits ftr_id_aa64mmfr2[] = {
+	ARM64_FTR_BITS(FTR_HIDDEN, FTR_STRICT, FTR_LOWER_SAFE, ID_AA64MMFR2_FWB_SHIFT, 4, 0),
 	ARM64_FTR_BITS(FTR_VISIBLE, FTR_STRICT, FTR_LOWER_SAFE, ID_AA64MMFR2_AT_SHIFT, 4, 0),
 	ARM64_FTR_BITS(FTR_HIDDEN, FTR_STRICT, FTR_LOWER_SAFE, ID_AA64MMFR2_LVA_SHIFT, 4, 0),
 	ARM64_FTR_BITS(FTR_HIDDEN, FTR_STRICT, FTR_LOWER_SAFE, ID_AA64MMFR2_IESB_SHIFT, 4, 0),
@@ -814,25 +815,38 @@ static bool has_no_hw_prefetch(const struct arm64_cpu_capabilities *entry, int _
 		MIDR_CPU_VAR_REV(1, MIDR_REVISION_MASK));
 }
 
-static bool hyp_offset_low(const struct arm64_cpu_capabilities *entry,
-			   int __unused)
-{
-	phys_addr_t idmap_addr = __pa_symbol(__hyp_idmap_text_start);
-
-	/*
-	 * Activate the lower HYP offset only if:
-	 * - the idmap doesn't clash with it,
-	 * - the kernel is not running at EL2.
-	 */
-	return idmap_addr > GENMASK(VA_BITS - 2, 0) && !is_kernel_in_hyp_mode();
-}
-
 static bool has_no_fpsimd(const struct arm64_cpu_capabilities *entry, int __unused)
 {
 	u64 pfr0 = read_sanitised_ftr_reg(SYS_ID_AA64PFR0_EL1);
 
 	return cpuid_feature_extract_signed_field(pfr0,
 					ID_AA64PFR0_FP_SHIFT) < 0;
+}
+
+static bool has_cache_idc(const struct arm64_cpu_capabilities *entry,
+			  int scope)
+{
+	u64 ctr;
+
+	if (scope == SCOPE_SYSTEM)
+		ctr = arm64_ftr_reg_ctrel0.sys_val;
+	else
+		ctr = read_cpuid_cachetype();
+
+	return ctr & BIT(CTR_IDC_SHIFT);
+}
+
+static bool has_cache_dic(const struct arm64_cpu_capabilities *entry,
+			  int scope)
+{
+	u64 ctr;
+
+	if (scope == SCOPE_SYSTEM)
+		ctr = arm64_ftr_reg_ctrel0.sys_val;
+	else
+		ctr = read_cpuid_cachetype();
+
+	return ctr & BIT(CTR_DIC_SHIFT);
 }
 
 static bool __meltdown_safe = true;
@@ -851,6 +865,8 @@ static bool unmap_kernel_at_el0(const struct arm64_cpu_capabilities *entry,
 		MIDR_ALL_VERSIONS(MIDR_CORTEX_A57),
 		MIDR_ALL_VERSIONS(MIDR_CORTEX_A72),
 		MIDR_ALL_VERSIONS(MIDR_CORTEX_A73),
+		MIDR_ALL_VERSIONS(MIDR_KRYO5S),
+		MIDR_ALL_VERSIONS(MIDR_HISI_TSV110),
 		{ /* sentinel */ }
 	};
 	char const *str = "kpti command line option";
@@ -968,10 +984,8 @@ static bool cpu_has_broken_dbm(void)
 	/* List of CPUs which have broken DBM support. */
 	static const struct midr_range cpus[] = {
 #ifdef CONFIG_ARM64_ERRATUM_1024718
-		// A55 r0p0 -r1p0
-		MIDR_RANGE(MIDR_CORTEX_A55, 0, 0, 1, 0),
-		MIDR_RANGE(MIDR_KRYO3S, 7, 12, 7, 12),
-		MIDR_RANGE(MIDR_KRYO4S, 7, 12, 7, 12),
+		MIDR_ALL_VERSIONS(MIDR_CORTEX_A55),
+		MIDR_RANGE(MIDR_KRYO5S, 13, 14, 13, 14),
 #endif
 		{},
 	};
@@ -1047,6 +1061,14 @@ static void cpu_copy_el2regs(const struct arm64_cpu_capabilities *__unused)
 		write_sysreg(read_sysreg(tpidr_el1), tpidr_el2);
 }
 #endif
+
+static void cpu_has_fwb(const struct arm64_cpu_capabilities *__unused)
+{
+	u64 val = read_sysreg_s(SYS_CLIDR_EL1);
+
+	/* Check that CLIDR_EL1.LOU{U,IS} are both 0 */
+	WARN_ON(val & (7 << 27 | 7 << 21));
+}
 
 #ifdef CONFIG_ARM64_SSBD
 static int ssbs_emulation_handler(struct pt_regs *regs, u32 instr)
@@ -1170,12 +1192,6 @@ static const struct arm64_cpu_capabilities arm64_features[] = {
 		.min_field_value = ID_AA64PFR0_EL0_32BIT_64BIT,
 	},
 	{
-		.desc = "Reduced HYP mapping offset",
-		.capability = ARM64_HYP_OFFSET_LOW,
-		.type = ARM64_CPUCAP_SYSTEM_FEATURE,
-		.matches = hyp_offset_low,
-	},
-	{
 		.desc = "Kernel page table isolation (KPTI)",
 		.capability = ARM64_UNMAP_KERNEL_AT_EL0,
 		.type = ARM64_CPUCAP_BOOT_RESTRICTED_CPU_LOCAL_FEATURE,
@@ -1208,6 +1224,55 @@ static const struct arm64_cpu_capabilities arm64_features[] = {
 		.min_field_value = 1,
 	},
 #endif
+#ifdef CONFIG_ARM64_SVE
+	{
+		.desc = "Scalable Vector Extension",
+		.type = ARM64_CPUCAP_SYSTEM_FEATURE,
+		.capability = ARM64_SVE,
+		.sys_reg = SYS_ID_AA64PFR0_EL1,
+		.sign = FTR_UNSIGNED,
+		.field_pos = ID_AA64PFR0_SVE_SHIFT,
+		.min_field_value = ID_AA64PFR0_SVE,
+		.matches = has_cpuid_feature,
+		.cpu_enable = sve_kernel_enable,
+	},
+#endif /* CONFIG_ARM64_SVE */
+#ifdef CONFIG_ARM64_RAS_EXTN
+	{
+		.desc = "RAS Extension Support",
+		.capability = ARM64_HAS_RAS_EXTN,
+		.type = ARM64_CPUCAP_SYSTEM_FEATURE,
+		.matches = has_cpuid_feature,
+		.sys_reg = SYS_ID_AA64PFR0_EL1,
+		.sign = FTR_UNSIGNED,
+		.field_pos = ID_AA64PFR0_RAS_SHIFT,
+		.min_field_value = ID_AA64PFR0_RAS_V1,
+		.cpu_enable = cpu_clear_disr,
+	},
+#endif /* CONFIG_ARM64_RAS_EXTN */
+	{
+		.desc = "Data cache clean to the PoU not required for I/D coherence",
+		.capability = ARM64_HAS_CACHE_IDC,
+		.type = ARM64_CPUCAP_SYSTEM_FEATURE,
+		.matches = has_cache_idc,
+	},
+	{
+		.desc = "Instruction cache invalidation not required for I/D coherence",
+		.capability = ARM64_HAS_CACHE_DIC,
+		.type = ARM64_CPUCAP_SYSTEM_FEATURE,
+		.matches = has_cache_dic,
+	},
+	{
+		.desc = "Stage-2 Force Write-Back",
+		.type = ARM64_CPUCAP_SYSTEM_FEATURE,
+		.capability = ARM64_HAS_STAGE2_FWB,
+		.sys_reg = SYS_ID_AA64MMFR2_EL1,
+		.sign = FTR_UNSIGNED,
+		.field_pos = ID_AA64MMFR2_FWB_SHIFT,
+		.min_field_value = 1,
+		.matches = has_cpuid_feature,
+		.cpu_enable = cpu_has_fwb,
+	},
 #ifdef CONFIG_ARM64_HW_AFDBM
 	{
 		/*
@@ -1241,15 +1306,6 @@ static const struct arm64_cpu_capabilities arm64_features[] = {
 		.cpu_enable = cpu_enable_ssbs,
 	},
 #endif
-	{
-		.desc = "CRC32 instructions",
-		.capability = ARM64_HAS_CRC32,
-		.type = ARM64_CPUCAP_SYSTEM_FEATURE,
-		.matches = has_cpuid_feature,
-		.sys_reg = SYS_ID_AA64ISAR0_EL1,
-		.field_pos = ID_AA64ISAR0_CRC32_SHIFT,
-		.min_field_value = 1,
-	},
 	{},
 };
 
