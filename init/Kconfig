@@ -22,9 +22,6 @@ config TOOLS_SUPPORT_RELR
 	# allmodconfig builds.
 	depends on !COMPILE_TEST
 
-config CC_HAS_ASM_GOTO
-	def_bool $(success,$(srctree)/scripts/gcc-goto.sh $(CC))
-
 config CONSTRUCTORS
 	bool
 	depends on !UML

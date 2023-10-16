@@ -39,7 +39,7 @@ void __trace_hcall_entry(unsigned long opcode, unsigned long *args);
 void __trace_hcall_exit(long opcode, unsigned long retval,
 			unsigned long *retbuf);
 /* OPAL tracing */
-#ifdef CONFIG_JUMP_LABEL
+#ifdef HAVE_JUMP_LABEL
 extern struct static_key opal_tracepoint_key;
 #endif
 
