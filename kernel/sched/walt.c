@@ -2361,6 +2361,7 @@ void init_clusters(void)
 }
 
 static unsigned long cpu_max_table_freq[NR_CPUS];
+cpumask_t asym_cap_sibling_cpus = CPU_MASK_NONE;
 
 static int cpufreq_notifier_policy(struct notifier_block *nb,
 		unsigned long val, void *data)
@@ -3180,7 +3181,7 @@ void walt_irq_work(struct irq_work *irq_work)
 	struct rq *rq;
 	int cpu;
 	u64 wc;
-	bool is_migration = false;
+	bool is_migration = false, is_asym_migration = false;
 	u64 total_grp_load = 0;
 	int level = 0;
 
@@ -3211,6 +3212,11 @@ void walt_irq_work(struct irq_work *irq_work)
 				account_load_subtractions(rq);
 				aggr_grp_load += rq->grp_time.prev_runnable_sum;
 			}
+			if (is_migration && rq->notif_pending &&
+			    cpumask_test_cpu(cpu, &asym_cap_sibling_cpus)) {
+				is_asym_migration = true;
+				rq->notif_pending = false;
+			}
 		}
 
 		cluster->aggr_grp_load = aggr_grp_load;
@@ -3239,9 +3245,12 @@ void walt_irq_work(struct irq_work *irq_work)
 				if (rq->notif_pending) {
 					flag |= SCHED_CPUFREQ_INTERCLUSTER_MIG;
 					rq->notif_pending = false;
-				} else
-					flag |= SCHED_CPUFREQ_FORCE_UPDATE;
+				}
 			}
+
+			if (is_asym_migration && cpumask_test_cpu(cpu,
+							&asym_cap_sibling_cpus))
+				flag |= SCHED_CPUFREQ_INTERCLUSTER_MIG;
 
 			if (i == num_cpus)
 				cpufreq_update_util(cpu_rq(cpu), flag);

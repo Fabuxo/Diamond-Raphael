@@ -1,14 +1,6 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2013-2015,2017, The Linux Foundation. All rights reserved.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 and
- * only version 2 as published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * Copyright (c) 2013-2015,2017,2019, The Linux Foundation. All rights reserved.
  */
 
 #define pr_fmt(fmt) "cpu-boost: " fmt
@@ -18,10 +10,31 @@
 #include <linux/cpufreq.h>
 #include <linux/cpu.h>
 #include <linux/sched.h>
-#include <linux/moduleparam.h>
 #include <linux/slab.h>
 #include <linux/input.h>
 #include <linux/time.h>
+#include <linux/sysfs.h>
+
+#define cpu_boost_attr_rw(_name)		\
+static struct kobj_attribute _name##_attr =	\
+__ATTR(_name, 0644, show_##_name, store_##_name)
+
+#define show_one(file_name)			\
+static ssize_t show_##file_name			\
+(struct kobject *kobj, struct kobj_attribute *attr, char *buf)	\
+{								\
+	return scnprintf(buf, PAGE_SIZE, "%u\n", file_name);	\
+}
+
+#define store_one(file_name)					\
+static ssize_t store_##file_name				\
+(struct kobject *kobj, struct kobj_attribute *attr,		\
+const char *buf, size_t count)					\
+{								\
+								\
+	sscanf(buf, "%u", &file_name);				\
+	return count;						\
+}
 
 struct cpu_sync {
 	int cpu;
@@ -37,10 +50,14 @@ static struct work_struct input_boost_work;
 static bool input_boost_enabled;
 
 static unsigned int input_boost_ms = 40;
-module_param(input_boost_ms, uint, 0644);
+show_one(input_boost_ms);
+store_one(input_boost_ms);
+cpu_boost_attr_rw(input_boost_ms);
 
 static unsigned int sched_boost_on_input;
-module_param(sched_boost_on_input, uint, 0644);
+show_one(sched_boost_on_input);
+store_one(sched_boost_on_input);
+cpu_boost_attr_rw(sched_boost_on_input);
 
 static bool sched_boost_active;
 
@@ -48,7 +65,9 @@ static struct delayed_work input_boost_rem;
 static u64 last_input_time;
 #define MIN_INPUT_INTERVAL (150 * USEC_PER_MSEC)
 
-static int set_input_boost_freq(const char *buf, const struct kernel_param *kp)
+static ssize_t store_input_boost_freq(struct kobject *kobj,
+				      struct kobj_attribute *attr,
+				      const char *buf, size_t count)
 {
 	int i, ntokens = 0;
 	unsigned int val, cpu;
@@ -92,10 +111,11 @@ check_enable:
 	}
 	input_boost_enabled = enabled;
 
-	return 0;
+	return count;
 }
 
-static int get_input_boost_freq(char *buf, const struct kernel_param *kp)
+static ssize_t show_input_boost_freq(struct kobject *kobj,
+				     struct kobj_attribute *attr, char *buf)
 {
 	int cnt = 0, cpu;
 	struct cpu_sync *s;
@@ -109,11 +129,7 @@ static int get_input_boost_freq(char *buf, const struct kernel_param *kp)
 	return cnt;
 }
 
-static const struct kernel_param_ops param_ops_input_boost_freq = {
-	.set = set_input_boost_freq,
-	.get = get_input_boost_freq,
-};
-module_param_cb(input_boost_freq, &param_ops_input_boost_freq, NULL, 0644);
+cpu_boost_attr_rw(input_boost_freq);
 
 /*
  * The CPUFREQ_ADJUST notifier is used to override the current policy min to
@@ -311,6 +327,7 @@ static struct input_handler cpuboost_input_handler = {
 	.id_table       = cpuboost_ids,
 };
 
+struct kobject *cpu_boost_kobj;
 static int cpu_boost_init(void)
 {
 	int cpu, ret;
@@ -328,6 +345,24 @@ static int cpu_boost_init(void)
 		s->cpu = cpu;
 	}
 	cpufreq_register_notifier(&boost_adjust_nb, CPUFREQ_POLICY_NOTIFIER);
+
+	cpu_boost_kobj = kobject_create_and_add("cpu_boost",
+						&cpu_subsys.dev_root->kobj);
+	if (!cpu_boost_kobj)
+		pr_err("Failed to initialize sysfs node for cpu_boost.\n");
+
+	ret = sysfs_create_file(cpu_boost_kobj, &input_boost_ms_attr.attr);
+	if (ret)
+		pr_err("Failed to create input_boost_ms node: %d\n", ret);
+
+	ret = sysfs_create_file(cpu_boost_kobj, &input_boost_freq_attr.attr);
+	if (ret)
+		pr_err("Failed to create input_boost_freq node: %d\n", ret);
+
+	ret = sysfs_create_file(cpu_boost_kobj,
+				&sched_boost_on_input_attr.attr);
+	if (ret)
+		pr_err("Failed to create sched_boost_on_input node: %d\n", ret);
 
 	ret = input_register_handler(&cpuboost_input_handler);
 	return 0;
