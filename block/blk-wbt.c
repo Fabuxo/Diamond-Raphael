@@ -29,27 +29,6 @@
 #define CREATE_TRACE_POINTS
 #include <trace/events/wbt.h>
 
-
-static inline void wbt_clear_state(struct request *rq)
-{
-	rq->wbt_flags = 0;
-}
-
-static inline enum wbt_flags wbt_flags(struct request *rq)
-{
-	return rq->wbt_flags;
-}
-
-static inline bool wbt_is_tracked(struct request *rq)
-{
-	return rq->wbt_flags & WBT_TRACKED;
-}
-
-static inline bool wbt_is_read(struct request *rq)
-{
-	return rq->wbt_flags & WBT_READ;
-}
-
 enum {
 	/*
 	 * Default setting, we'll scale up (to 75% of QD max) or down (min 1)
@@ -644,10 +623,9 @@ void wbt_issue(struct rq_wb *rwb, struct blk_issue_stat *stat)
 	 * only use the address to compare with, which is why we store the
 	 * sync_issue time locally.
 	 */
-	 
-	if (wbt_is_read(rq) && !rwb->sync_issue) {
-		rwb->sync_cookie = rq;
-		rwb->sync_issue = rq->io_start_time_ns;
+	if (wbt_is_read(stat) && !rwb->sync_issue) {
+		rwb->sync_cookie = stat;
+		rwb->sync_issue = blk_stat_time(stat);
 	}
 }
 
@@ -735,6 +713,8 @@ int wbt_init(struct request_queue *q)
 {
 	struct rq_wb *rwb;
 	int i;
+
+	BUILD_BUG_ON(WBT_NR_BITS > BLK_STAT_RES_BITS);
 
 	rwb = kzalloc(sizeof(*rwb), GFP_KERNEL);
 	if (!rwb)
