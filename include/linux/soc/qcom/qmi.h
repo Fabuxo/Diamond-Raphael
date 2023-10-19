@@ -79,7 +79,7 @@ struct qmi_elem_info {
 	enum qmi_elem_type data_type;
 	u32 elem_len;
 	u32 elem_size;
-	enum qmi_array_type array_type;
+	enum qmi_array_type is_array;
 	u8 tlv_type;
 	u32 offset;
 	struct qmi_elem_info *ei_array;
