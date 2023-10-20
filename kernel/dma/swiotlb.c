@@ -27,6 +27,7 @@
 #include <linux/string.h>
 #include <linux/swiotlb.h>
 #include <linux/pfn.h>
+#include <linux/dma-direct.h>
 #include <linux/types.h>
 #include <linux/ctype.h>
 #include <linux/highmem.h>

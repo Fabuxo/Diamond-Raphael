@@ -1,7 +1,11 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
- *  Copyright (c) 2013-2014,2018 The Linux Foundation. All rights reserved.
+ *
+ *  Copyright (c) 2013-2017, The Linux Foundation. All rights reserved.
  *  Copyright (C) 2000-2004 Russell King
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  */
 #include <linux/module.h>
 #include <linux/mm.h>
@@ -22,7 +26,7 @@
 #include <linux/spinlock.h>
 
 struct removed_region {
-	dma_addr_t	base;
+	phys_addr_t	base;
 	int		nr_pages;
 	unsigned long	*bitmap;
 	struct mutex	lock;
@@ -73,17 +77,19 @@ void *removed_alloc(struct device *dev, size_t size, dma_addr_t *handle,
 {
 	bool no_kernel_mapping = attrs & DMA_ATTR_NO_KERNEL_MAPPING;
 	bool skip_zeroing = attrs & DMA_ATTR_SKIP_ZEROING;
-	int pageno;
-	unsigned long order = get_order(size);
-	void *addr = NULL;
+	unsigned int pageno;
+	unsigned long order;
+	void __iomem *addr = NULL;
 	struct removed_region *dma_mem = dev->removed_mem;
-	int nbits = size >> PAGE_SHIFT;
+	unsigned int nbits;
 	unsigned int align;
-
-	size = PAGE_ALIGN(size);
 
 	if (!gfpflags_allow_blocking(gfp))
 		return NULL;
+
+	size = PAGE_ALIGN(size);
+	nbits = size >> PAGE_SHIFT;
+	order = get_order(size);
 
 	if (order > get_order(SZ_1M))
 		order = get_order(SZ_1M);
@@ -106,12 +112,12 @@ void *removed_alloc(struct device *dev, size_t size, dma_addr_t *handle,
 			goto out;
 		}
 
-		addr = ioremap(base, size);
+		addr = ioremap_wc(base, size);
 		if (WARN_ON(!addr)) {
 			bitmap_clear(dma_mem->bitmap, pageno, nbits);
 		} else {
 			if (!skip_zeroing)
-				memset(addr, 0, size);
+				memset_io(addr, 0, size);
 			if (no_kernel_mapping) {
 				iounmap(addr);
 				addr = (void *)NO_KERNEL_MAPPING_DUMMY;
@@ -139,6 +145,7 @@ void removed_free(struct device *dev, size_t size, void *cpu_addr,
 	bool no_kernel_mapping = attrs & DMA_ATTR_NO_KERNEL_MAPPING;
 	struct removed_region *dma_mem = dev->removed_mem;
 
+	size = PAGE_ALIGN(size);
 	if (!no_kernel_mapping)
 		iounmap(cpu_addr);
 	mutex_lock(&dma_mem->lock);
@@ -199,10 +206,10 @@ void removed_sync_sg_for_device(struct device *dev,
 {
 }
 
-void *removed_remap(struct device *dev, void *cpu_addr, dma_addr_t handle,
-			size_t size, unsigned long attrs)
+static void __iomem *removed_remap(struct device *dev, void *cpu_addr,
+			dma_addr_t handle, size_t size, unsigned long attrs)
 {
-	return ioremap(handle, size);
+	return ioremap_wc(handle, size);
 }
 
 void removed_unremap(struct device *dev, void *remapped_address, size_t size)
