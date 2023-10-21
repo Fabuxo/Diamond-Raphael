@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2014-2015, 2018, 2020, The Linux Foundation. All rights reserved.
  *
@@ -171,36 +172,6 @@ static void add_policy(struct cpufreq_policy *policy)
 	}
 }
 
-static int cpufreq_policy_notifier(struct notifier_block *nb,
-		unsigned long event, void *data)
-{
-	struct cpufreq_policy *policy = data;
-
-	switch (event) {
-	case CPUFREQ_START:
-		mutex_lock(&state_lock);
-		add_policy(policy);
-		update_all_devfreqs();
-		mutex_unlock(&state_lock);
-		break;
-
-	case CPUFREQ_STOP:
-		mutex_lock(&state_lock);
-		if (state[policy->cpu]) {
-			state[policy->cpu]->on = false;
-			update_all_devfreqs();
-		}
-		mutex_unlock(&state_lock);
-		break;
-	}
-
-	return 0;
-}
-
-static struct notifier_block cpufreq_policy_nb = {
-	.notifier_call = cpufreq_policy_notifier
-};
-
 static int cpufreq_trans_notifier(struct notifier_block *nb,
 		unsigned long event, void *data)
 {
@@ -230,6 +201,57 @@ static struct notifier_block cpufreq_trans_nb = {
 	.notifier_call = cpufreq_trans_notifier
 };
 
+static int devfreq_cpufreq_hotplug_coming_up(unsigned int cpu)
+{
+	struct cpufreq_policy *policy;
+
+	policy = cpufreq_cpu_get(cpu);
+	if (!policy) {
+		pr_err("Policy is null for cpu =%d\n", cpu);
+		return 0;
+	}
+	mutex_lock(&state_lock);
+	add_policy(policy);
+	update_all_devfreqs();
+	mutex_unlock(&state_lock);
+	return 0;
+}
+
+static int devfreq_cpufreq_hotplug_going_down(unsigned int cpu)
+{
+	struct cpufreq_policy *policy;
+
+	policy = cpufreq_cpu_get(cpu);
+	if (!policy) {
+		pr_err("Policy is null for cpu =%d\n", cpu);
+		return 0;
+	}
+	mutex_lock(&state_lock);
+	if (state[policy->cpu]) {
+		state[policy->cpu]->on = false;
+		update_all_devfreqs();
+	}
+	mutex_unlock(&state_lock);
+	return 0;
+}
+
+static int devfreq_cpufreq_cpu_hp_init(void)
+{
+	int ret = 0;
+
+	ret = cpuhp_setup_state(CPUHP_AP_ONLINE_DYN,
+				"DEVFREQ_CPUFREQ",
+				devfreq_cpufreq_hotplug_coming_up,
+				devfreq_cpufreq_hotplug_going_down);
+	if (ret < 0) {
+		cpuhp_remove_state(CPUHP_AP_ONLINE_DYN);
+		pr_err("devfreq-cpufreq: failed to register HP notifier: %d\n",
+									ret);
+	} else
+		ret = 0;
+	return ret;
+}
+
 static int register_cpufreq(void)
 {
 	int ret = 0;
@@ -242,18 +264,16 @@ static int register_cpufreq(void)
 		goto cnt_not_zero;
 
 	get_online_cpus();
-	ret = cpufreq_register_notifier(&cpufreq_policy_nb,
-				CPUFREQ_POLICY_NOTIFIER);
-	if (ret)
+
+	ret = devfreq_cpufreq_cpu_hp_init();
+	if (ret < 0)
 		goto out;
 
 	ret = cpufreq_register_notifier(&cpufreq_trans_nb,
 				CPUFREQ_TRANSITION_NOTIFIER);
-	if (ret) {
-		cpufreq_unregister_notifier(&cpufreq_policy_nb,
-				CPUFREQ_POLICY_NOTIFIER);
+
+	if (ret)
 		goto out;
-	}
 
 	for_each_online_cpu(cpu) {
 		policy = cpufreq_cpu_get(cpu);
@@ -273,7 +293,6 @@ cnt_not_zero:
 
 static int unregister_cpufreq(void)
 {
-	int ret = 0;
 	int cpu;
 
 	mutex_lock(&cpufreq_reg_lock);
@@ -281,8 +300,8 @@ static int unregister_cpufreq(void)
 	if (cpufreq_cnt > 1)
 		goto out;
 
-	cpufreq_unregister_notifier(&cpufreq_policy_nb,
-				CPUFREQ_POLICY_NOTIFIER);
+	cpuhp_remove_state(CPUHP_AP_ONLINE_DYN);
+
 	cpufreq_unregister_notifier(&cpufreq_trans_nb,
 				CPUFREQ_TRANSITION_NOTIFIER);
 
@@ -297,7 +316,7 @@ static int unregister_cpufreq(void)
 out:
 	cpufreq_cnt--;
 	mutex_unlock(&cpufreq_reg_lock);
-	return ret;
+	return 0;
 }
 
 /* ==================== devfreq part ==================== */
@@ -618,8 +637,7 @@ static int add_table_from_of(struct device_node *of_node)
 
 	common_tbl = read_tbl(of_node, PROP_TABLE);
 	if (!common_tbl) {
-		tbl_list = kcalloc(num_possible_cpus(),
-				sizeof(*tbl_list), GFP_KERNEL);
+		tbl_list = kcalloc(num_possible_cpus(), sizeof(*tbl_list), GFP_KERNEL);
 		if (!tbl_list) {
 			ret = -ENOMEM;
 			goto err_list;
@@ -675,6 +693,7 @@ static int __init devfreq_cpufreq_init(void)
 		of_node_put(of_par);
 	} else {
 		pr_info("No tables parsed from DT.\n");
+		return 0;
 	}
 
 	ret = devfreq_add_governor(&devfreq_cpufreq);
@@ -691,6 +710,11 @@ static void __exit devfreq_cpufreq_exit(void)
 {
 	int ret, cpu;
 	struct devfreq_node *node, *tmp;
+	struct device_node *of_par;
+
+	of_par = of_find_node_by_name(NULL, "devfreq-cpufreq");
+	if (!of_par)
+		return;
 
 	ret = devfreq_remove_governor(&devfreq_cpufreq);
 	if (ret)
