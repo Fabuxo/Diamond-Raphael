@@ -2115,10 +2115,9 @@ void mark_task_starting(struct task_struct *p)
 	update_task_cpu_cycles(p, cpu_of(rq), wallclock);
 }
 
-static cpumask_t all_cluster_cpus = CPU_MASK_NONE;
 DECLARE_BITMAP(all_cluster_ids, NR_CPUS);
 struct sched_cluster *sched_cluster[NR_CPUS];
-int num_clusters;
+static int num_sched_clusters;
 
 struct list_head cluster_head;
 
@@ -2189,15 +2188,29 @@ static void add_cluster(const struct cpumask *cpus, struct list_head *head)
 		cpu_rq(i)->cluster = cluster;
 
 	insert_cluster(cluster, head);
-	set_bit(num_clusters, all_cluster_ids);
-	num_clusters++;
+	num_sched_clusters++;
+}
+
+static void cleanup_clusters(struct list_head *head)
+{
+	struct sched_cluster *cluster, *tmp;
+	int i;
+
+	list_for_each_entry_safe(cluster, tmp, head, list) {
+		for_each_cpu(i, &cluster->cpus)
+			cpu_rq(i)->cluster = &init_cluster;
+
+		list_del(&cluster->list);
+		num_sched_clusters--;
+		kfree(cluster);
+	}
 }
 
 static int compute_max_possible_capacity(struct sched_cluster *cluster)
 {
 	int capacity = 1024;
 
-	capacity *= capacity_scale_cpu_efficiency(cluster);
+	capacity *= (1024 * cluster->efficiency) / min_possible_efficiency;
 	capacity >>= 10;
 
 	capacity *= (1024 * cluster->max_possible_freq) / min_max_freq;
@@ -2315,8 +2328,12 @@ void update_cluster_topology(void)
 	INIT_LIST_HEAD(&new_head);
 
 	for_each_cpu(i, &cpus) {
-		cluster_cpus = cpu_coregroup_mask(i);
-		cpumask_or(&all_cluster_cpus, &all_cluster_cpus, cluster_cpus);
+		cluster_cpus = topology_possible_sibling_cpumask(i);
+		if (cpumask_empty(cluster_cpus)) {
+			WARN(1, "WALT: Invalid cpu topology!!");
+			cleanup_clusters(&new_head);
+			return;
+		}
 		cpumask_andnot(&cpus, &cpus, cluster_cpus);
 		add_cluster(cluster_cpus, &new_head);
 	}
