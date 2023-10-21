@@ -33,7 +33,7 @@
 #define for_each_related_thread_group(grp) \
 	list_for_each_entry(grp, &active_related_thread_groups, list)
 
-#define SCHED_NEW_TASK_WINDOWS 5
+#define NEW_TASK_ACTIVE_TIME 100000000
 
 extern unsigned int sched_ravg_window;
 extern unsigned int max_possible_efficiency;
