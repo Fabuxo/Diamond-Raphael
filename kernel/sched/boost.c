@@ -1,13 +1,6 @@
-/* Copyright (c) 2012-2019, The Linux Foundation. All rights reserved.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 and
- * only version 2 as published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+// SPDX-License-Identifier: GPL-2.0-only
+/*
+ * Copyright (c) 2012-2020, The Linux Foundation. All rights reserved.
  */
 
 #include "sched.h"
@@ -153,7 +146,7 @@ static int sched_effective_boost(void)
 static void sched_boost_disable(int type)
 {
 	struct sched_boost_data *sb = &sched_boosts[type];
-	int next_boost;
+	int next_boost, prev_boost = sched_boost_type;
 
 	if (sb->refcount <= 0)
 		return;
@@ -163,14 +156,15 @@ static void sched_boost_disable(int type)
 	if (sb->refcount)
 		return;
 
+	next_boost = sched_effective_boost();
+	if (next_boost == prev_boost)
+		return;
 	/*
 	 * This boost's refcount becomes zero, so it must
 	 * be disabled. Disable it first and then apply
 	 * the next boost.
 	 */
-	sb->exit();
-
-	next_boost = sched_effective_boost();
+	sched_boosts[prev_boost].exit();
 	sched_boosts[next_boost].enter();
 }
 
