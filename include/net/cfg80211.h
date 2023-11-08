@@ -5572,6 +5572,30 @@ static inline void cfg80211_testmode_event(struct sk_buff *skb, gfp_t gfp)
 #endif
 
 /**
+ * struct cfg80211_fils_resp_params - FILS connection response params
+ * @kek: KEK derived from a successful FILS connection (may be %NULL)
+ * @kek_len: Length of @fils_kek in octets
+ * @update_erp_next_seq_num: Boolean value to specify whether the value in
+ *	@erp_next_seq_num is valid.
+ * @erp_next_seq_num: The next sequence number to use in ERP message in
+ *	FILS Authentication. This value should be specified irrespective of the
+ *	status for a FILS connection.
+ * @pmk: A new PMK if derived from a successful FILS connection (may be %NULL).
+ * @pmk_len: Length of @pmk in octets
+ * @pmkid: A new PMKID if derived from a successful FILS connection or the PMKID
+ *	used for this FILS connection (may be %NULL).
+ */
+struct cfg80211_fils_resp_params {
+	const u8 *kek;
+	size_t kek_len;
+	bool update_erp_next_seq_num;
+	u16 erp_next_seq_num;
+	const u8 *pmk;
+	size_t pmk_len;
+	const u8 *pmkid;
+};
+
+/**
  * struct cfg80211_connect_resp_params - Connection response params
  * @status: Status code, %WLAN_STATUS_SUCCESS for successful connection, use
  *	%WLAN_STATUS_UNSPECIFIED_FAILURE if your device cannot give you
@@ -5622,6 +5646,7 @@ struct cfg80211_connect_resp_params {
 	const u8 *pmk;
 	size_t pmk_len;
 	const u8 *pmkid;
+	struct cfg80211_fils_resp_params fils;
 	enum nl80211_timeout_reason timeout_reason;
 };
 

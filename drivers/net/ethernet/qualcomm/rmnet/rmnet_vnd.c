@@ -164,7 +164,7 @@ static void rmnet_get_stats64(struct net_device *dev,
 
 static u16 rmnet_vnd_select_queue(struct net_device *dev,
 				  struct sk_buff *skb,
-				  void *accel_priv,
+				  struct net_device *sb_dev,
 				  select_queue_fallback_t fallback)
 {
 	struct rmnet_priv *priv = netdev_priv(dev);

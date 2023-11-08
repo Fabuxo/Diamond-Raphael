@@ -9801,7 +9801,7 @@ hdd_check_for_prio_filter_in_clsact_qdisc(struct Qdisc *qdisc, uint32_t prio)
 	if (qdf_unlikely(!cops || !cops->tcf_block))
 		return QDISC_FILTER_PRIO_MISMATCH;
 
-	ingress_block = cops->tcf_block(qdisc, TC_H_MIN_INGRESS, NULL);
+	ingress_block = cops->tcf_block(qdisc, TC_H_MIN_INGRESS);
 	if (qdf_unlikely(!ingress_block))
 		return QDISC_FILTER_PRIO_MISMATCH;
 

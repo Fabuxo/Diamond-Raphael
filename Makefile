@@ -1,9 +1,9 @@
 # SPDX-License-Identifier: GPL-2.0
 VERSION = 4
-PATCHLEVEL = 16
-SUBLEVEL = 336
+PATCHLEVEL = 19
+SUBLEVEL = 298
 EXTRAVERSION =
-NAME = Petit Gorille
+NAME = "People's Front"
 
 # *DOCUMENTATION*
 # To see a list of typical targets execute "make help"
