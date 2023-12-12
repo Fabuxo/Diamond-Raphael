@@ -1680,16 +1680,17 @@ static void ncm_free_inst(struct usb_function_instance *f)
 	struct f_ncm_opts *opts;
 
 #ifdef CONFIG_USB_CONFIGFS_UEVENT
+	cancel_work_sync(&_ncm_setup_desc->work);
 	/* release _ncm_setup_desc related resource */
 	device_destroy(_ncm_setup_desc->device->class,
 		_ncm_setup_desc->device->devt);
-	cancel_work(&_ncm_setup_desc->work);
 	kfree(_ncm_setup_desc);
 #endif
 
 	opts = container_of(f, struct f_ncm_opts, func_inst);
 	if (opts->bound)
 		gether_cleanup(netdev_priv(opts->net));
+	else
 	kfree(opts);
 }
 

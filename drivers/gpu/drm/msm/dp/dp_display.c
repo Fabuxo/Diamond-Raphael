@@ -1050,14 +1050,11 @@ static void dp_display_disconnect_sync(struct dp_display_private *dp)
 	dp->aux->abort(dp->aux, false);
 
 	/* wait for idle state */
-	cancel_work(&dp->connect_work);
-	cancel_work(&dp->attention_work);
+	cancel_work_sync(&dp->connect_work);
+	cancel_work_sync(&dp->attention_work);
 	flush_workqueue(dp->wq);
 
 	dp_display_handle_disconnect(dp);
-
-	/* Reset abort value to allow future connections */
-	atomic_set(&dp->aborted, 0);
 }
 
 static int dp_display_usbpd_disconnect_cb(struct device *dev)

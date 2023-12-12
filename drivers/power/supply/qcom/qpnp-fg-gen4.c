@@ -6533,7 +6533,7 @@ static void fg_gen4_cleanup(struct fg_gen4_chip *chip)
 
 	fg_unregister_interrupts(fg, chip, FG_GEN4_IRQ_MAX);
 
-	cancel_work(&fg->status_change_work);
+	cancel_work_sync(&fg->status_change_work);
 	if (chip->soc_scale_mode)
 		fg_gen4_exit_soc_scale(chip);
 
