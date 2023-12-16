@@ -717,60 +717,36 @@ ARCH_AFLAGS :=
 ARCH_CFLAGS :=
 include arch/$(SRCARCH)/Makefile
 
+ifeq ($(CONFIG_UFS3V1), y)
+KBUILD_CFLAGS += -DUFS3V1
+else
+KBUILD_CFLAGS += -DUFS3V0
+endif
+
 KBUILD_CFLAGS	+= $(call cc-option,-fno-delete-null-pointer-checks,)
 KBUILD_CFLAGS	+= $(call cc-disable-warning,frame-address,)
 KBUILD_CFLAGS	+= $(call cc-disable-warning, format-truncation)
 KBUILD_CFLAGS	+= $(call cc-disable-warning, format-overflow)
 KBUILD_CFLAGS	+= $(call cc-disable-warning, int-in-bool-context)
 KBUILD_CFLAGS	+= $(call cc-disable-warning, address-of-packed-member)
-KBUILD_CFLAGS	+= $(call cc-disable-warning, attribute-alias)
 
-ifeq ($(CONFIG_CC_OPTIMIZE_FOR_SIZE), y)
-KBUILD_CFLAGS   += -Os
-KBUILD_AFLAGS   += -Os
-KBUILD_LDFLAGS  += -Os
-else ifeq ($(cc-name),clang)
-KBUILD_CFLAGS   += -O3
-KBUILD_AFLAGS   += -O3
-KBUILD_LDFLAGS  += -O3
-else
+ifdef CONFIG_CC_OPTIMIZE_FOR_PERFORMANCE
 KBUILD_CFLAGS   += -O2
-KBUILD_AFLAGS   += -O2
-KBUILD_LDFLAGS  += -O2
-ifdef CONFIG_POLLY_CLANG
-POLLY_FLAGS	+= -mllvm -polly \
+else ifdef CONFIG_CC_OPTIMIZE_FOR_PERFORMANCE_O3
+KBUILD_CFLAGS   += -O3
+else ifdef CONFIG_CC_OPTIMIZE_FOR_SIZE
+KBUILD_CFLAGS   += -Os
+endif
+
+ifdef CONFIG_LLVM_POLLY
+KBUILD_CFLAGS	+= -mllvm -polly \
+		   -mllvm -polly-run-inliner \
 		   -mllvm -polly-ast-use-context \
 		   -mllvm -polly-detect-keep-going \
-		   -mllvm -polly-run-inliner \
-		   -mllvm -polly-vectorizer=stripmine
-
-ifeq ($(shell test $(CONFIG_CLANG_VERSION) -lt 160000; echo $$?),0)
-POLLY_FLAGS	+= -mllvm -polly-invariant-load-hoisting
-endif
-
-ifeq ($(shell test $(CONFIG_CLANG_VERSION) -gt 130000; echo $$?),0)
-POLLY_FLAGS	+= -mllvm -polly-loopfusion-greedy=1 \
-	     -mllvm -polly-reschedule=1 \
-	     -mllvm -polly-postopts=1 \
-	     -mllvm -polly-num-threads=0 \
-	     -mllvm -polly-omp-backend=LLVM \
-	     -mllvm -polly-scheduling=dynamic \
-	     -mllvm -polly-scheduling-chunksize=1
-else
-POLLY_FLAGS	+= -mllvm -polly-opt-fusion=max
-endif
-
-# Polly may optimise loops with dead paths beyound what the linker
-# can understand. This may negate the effect of the linker's DCE
-# so we tell Polly to perfom proven DCE on the loops it optimises
-# in order to preserve the overall effect of the linker's DCE.
-ifdef CONFIG_LD_DEAD_CODE_DATA_ELIMINATION
-POLLY_FLAGS	+= -mllvm -polly-run-dce
-endif
-KBUILD_CFLAGS += $(POLLY_FLAGS)
-KBUILD_AFLAGS += $(POLLY_FLAGS)
-KBUILD_LDFLAGS	+= $(POLLY_FLAGS)
-endif
+           -mllvm -polly-position=before-vectorizer \
+		   -mllvm -polly-vectorizer=stripmine \
+           -mllvm -polly-detect-profitability-min-per-loop-insts=40 \
+		   -mllvm -polly-invariant-load-hoisting
 endif
 
 # Tell gcc to never replace conditional load with a non-conditional one
