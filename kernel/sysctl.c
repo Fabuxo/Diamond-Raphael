@@ -148,18 +148,6 @@ static int six_hundred_forty_kb = 640 * 1024;
 static int __maybe_unused two_hundred_million = 200000000;
 static int two_hundred_fifty_five = 255;
 
-#ifdef CONFIG_SCHED_WALT
-const int sched_user_hint_max = 1000;
-/*
- * CFS task prio range is [100 ... 139]
- * 120 is the default prio.
- * RTG boost range is [100 ... 119] because giving
- * boost for [120 .. 139] does not make sense.
- * 99 means disabled and it is the default value.
- */
-static unsigned int min_cfs_boost_prio = 99;
-static unsigned int max_cfs_boost_prio = 119;
-#endif
 /* this is needed for the proc_doulongvec_minmax of vm_dirty_bytes */
 static unsigned long dirty_bytes_min = 2 * PAGE_SIZE;
 
@@ -397,7 +385,7 @@ static struct ctl_table kern_table[] = {
 		.data		= &sysctl_sched_group_upmigrate_pct,
 		.maxlen		= sizeof(unsigned int),
 		.mode		= 0644,
-		.proc_handler	= walt_proc_group_thresholds_handler,
+		.proc_handler	= walt_proc_update_handler,
 		.extra1		= &sysctl_sched_group_downmigrate_pct,
 	},
 	{
@@ -405,7 +393,7 @@ static struct ctl_table kern_table[] = {
 		.data		= &sysctl_sched_group_downmigrate_pct,
 		.maxlen		= sizeof(unsigned int),
 		.mode		= 0644,
-		.proc_handler	= walt_proc_group_thresholds_handler,
+		.proc_handler	= walt_proc_update_handler,
 		.extra1		= &zero,
 		.extra2		= &sysctl_sched_group_upmigrate_pct,
 	},
@@ -464,22 +452,13 @@ static struct ctl_table kern_table[] = {
 		.extra2		= &one_thousand,
 	},
 	{
-		.procname	= "walt_rtg_cfs_boost_prio",
-		.data		= &sysctl_walt_rtg_cfs_boost_prio,
+		.procname	= "sched_little_cluster_coloc_fmin_khz",
+		.data		= &sysctl_sched_little_cluster_coloc_fmin_khz,
 		.maxlen		= sizeof(unsigned int),
 		.mode		= 0644,
-		.proc_handler   = proc_dointvec_minmax,
-		.extra1		= &min_cfs_boost_prio,
-		.extra2		= &max_cfs_boost_prio,
-	},
-	{
-		.procname	= "walt_low_latency_task_threshold",
-		.data		= &sysctl_walt_low_latency_task_threshold,
-		.maxlen		= sizeof(unsigned int),
-		.mode		= 0644,
-		.proc_handler   = proc_dointvec_minmax,
+		.proc_handler	= sched_little_cluster_coloc_fmin_khz_handler,
 		.extra1		= &zero,
-		.extra2		= &one_thousand,
+		.extra2		= &two_million,
 	},
 #endif
 	{
@@ -3465,29 +3444,6 @@ int proc_douintvec_capacity(struct ctl_table *table, int write,
 				do_proc_douintvec_capacity_conv, NULL);
 }
 
-static int do_proc_douintvec_rwin(bool *negp, unsigned long *lvalp,
-				  int *valp, int write, void *data)
-{
-	if (write) {
-		if ((*lvalp >= 2 && *lvalp <= 5) || *lvalp == 8)
-			*valp = *lvalp;
-		else
-			return -EINVAL;
-	} else {
-		*negp = false;
-		*lvalp = *valp;
-	}
-
-	return 0;
-}
-
-int proc_douintvec_ravg_window(struct ctl_table *table, int write,
-			       void __user *buffer, size_t *lenp, loff_t *ppos)
-{
-	return do_proc_dointvec(table, write, buffer, lenp, ppos,
-				do_proc_douintvec_rwin, NULL);
-}
-
 #else /* CONFIG_PROC_SYSCTL */
 
 int proc_dostring(struct ctl_table *table, int write,
@@ -3553,12 +3509,6 @@ int proc_doulongvec_ms_jiffies_minmax(struct ctl_table *table, int write,
 
 int proc_douintvec_capacity(struct ctl_table *table, int write,
 			    void __user *buffer, size_t *lenp, loff_t *ppos)
-{
-	return -ENOSYS;
-}
-
-int proc_douintvec_ravg_window(struct ctl_table *table, int write,
-			       void __user *buffer, size_t *lenp, loff_t *ppos)
 {
 	return -ENOSYS;
 }

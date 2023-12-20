@@ -13,10 +13,10 @@
 
 #include "sched.h"
 
+#include <uapi/linux/sched/types.h>
 #include <linux/sched/cpufreq.h>
 #include <trace/events/power.h>
 #include <linux/sched/sysctl.h>
-#include <uapi/linux/sched/types.h>
 
 struct sugov_tunables {
 	struct gov_attr_set	attr_set;
