@@ -886,9 +886,6 @@ CONFIG_LLVM_POLLY=y
 CONFIG_CC_OPTIMIZE_FOR_PERFORMANCE=y
 # CONFIG_CC_OPTIMIZE_FOR_SIZE is not set
 
-# Enable UFS 3.1 features
-CONFIG_UFS3V1=y
-
 #
 # Timers subsystem
 #
