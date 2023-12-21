@@ -31,47 +31,27 @@ struct mempolicy;
  * subdir_node is used to build the rb tree "subdir" of the parent.
  */
 struct proc_dir_entry {
-        refcount_t refcnt;
 	unsigned int low_ino;
+	umode_t mode;
 	nlink_t nlink;
 	kuid_t uid;
 	kgid_t gid;
 	loff_t size;
-	struct proc_dir_entry *parent;
-	struct rb_root subdir;
-	struct rb_node subdir_node;
 	const struct inode_operations *proc_iops;
 	const struct file_operations *proc_fops;
-	const struct dentry_operations *proc_dops;
-	union {
-		const struct seq_operations *seq_ops;
-		int (*single_show)(struct seq_file *, void *);
-	};
-	proc_write_t write;
+	struct proc_dir_entry *parent;
+	struct rb_root_cached subdir;
+	struct rb_node subdir_node;
 	void *data;
-	unsigned int state_size;
 	atomic_t count;		/* use count */
 	atomic_t in_use;	/* number of callers into module in progress; */
 			/* negative -> it's going away RSN */
 	struct completion *pde_unload_completion;
 	struct list_head pde_openers;	/* who did ->open, but not ->release */
 	spinlock_t pde_unload_lock; /* proc_fops checks and pde_users bumps */
-	char *name;
-	umode_t mode;
 	u8 namelen;
-	char inline_name[];
+	char name[];
 } __randomize_layout;
-
-#define SIZEOF_PDE	(				\
-	sizeof(struct proc_dir_entry) < 128 ? 128 :	\
-	sizeof(struct proc_dir_entry) < 192 ? 192 :	\
-	sizeof(struct proc_dir_entry) < 256 ? 256 :	\
-	sizeof(struct proc_dir_entry) < 512 ? 512 :	\
-	0)
-#define SIZEOF_PDE_INLINE_NAME (SIZEOF_PDE - sizeof(struct proc_dir_entry))
-
-extern struct kmem_cache *proc_dir_entry_cache;
-void pde_free(struct proc_dir_entry *pde);
 
 union proc_op {
 	int (*proc_get_link)(struct dentry *, struct path *);
@@ -189,14 +169,11 @@ extern bool proc_fill_cache(struct file *, struct dir_context *, const char *, i
 /*
  * generic.c
  */
-struct proc_dir_entry *proc_create_reg(const char *name, umode_t mode,
-		struct proc_dir_entry **parent, void *data);
-struct proc_dir_entry *proc_register(struct proc_dir_entry *dir,
-		struct proc_dir_entry *dp);
 extern struct dentry *proc_lookup(struct inode *, struct dentry *, unsigned int);
-struct dentry *proc_lookup_de(struct inode *, struct dentry *, struct proc_dir_entry *);
+extern struct dentry *proc_lookup_de(struct proc_dir_entry *, struct inode *,
+				     struct dentry *);
 extern int proc_readdir(struct file *, struct dir_context *);
-int proc_readdir_de(struct file *, struct dir_context *, struct proc_dir_entry *);
+extern int proc_readdir_de(struct proc_dir_entry *, struct file *, struct dir_context *);
 
 static inline struct proc_dir_entry *pde_get(struct proc_dir_entry *pde)
 {
@@ -333,10 +310,3 @@ extern unsigned long task_statm(struct mm_struct *,
 				unsigned long *, unsigned long *,
 				unsigned long *, unsigned long *);
 extern void task_mem(struct seq_file *, struct mm_struct *);
-
-extern const struct dentry_operations proc_net_dentry_ops;
-static inline void pde_force_lookup(struct proc_dir_entry *pde)
-{
-	/* /proc/net/ entries can be changed under us by setns(CLONE_NEWNET) */
-	pde->proc_dops = &proc_net_dentry_ops;
-}
