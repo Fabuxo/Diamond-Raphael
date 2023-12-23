@@ -3417,7 +3417,7 @@ get_page_from_freelist(gfp_t gfp_mask, unsigned int order, int alloc_flags,
 			}
 		}
 
-		mark = zone->watermark[alloc_flags & ALLOC_WMARK_MASK];
+		mark = zone->_watermark[alloc_flags & ALLOC_WMARK_MASK];
 		if (!zone_watermark_fast(zone, order, mark,
 				       ac_classzone_idx(ac), alloc_flags)) {
 			int ret;
@@ -3658,7 +3658,7 @@ __alloc_pages_direct_compact(gfp_t gfp_mask, unsigned int order,
 		unsigned int alloc_flags, const struct alloc_context *ac,
 		enum compact_priority prio, enum compact_result *compact_result)
 {
-	struct page *page;
+	struct page *page = NULL;
 	unsigned long pflags;
 	unsigned int noreclaim_flag;
 
@@ -3669,13 +3669,10 @@ __alloc_pages_direct_compact(gfp_t gfp_mask, unsigned int order,
 	noreclaim_flag = memalloc_noreclaim_save();
 
 	*compact_result = try_to_compact_pages(gfp_mask, order, alloc_flags, ac,
-									prio);
+								prio, &page);
 
 	memalloc_noreclaim_restore(noreclaim_flag);
 	psi_memstall_leave(&pflags);
-
-	if (*compact_result <= COMPACT_INACTIVE)
-		return NULL;
 
 	/*
 	 * At least in one zone compaction wasn't deferred or skipped, so let's
@@ -3683,7 +3680,13 @@ __alloc_pages_direct_compact(gfp_t gfp_mask, unsigned int order,
 	 */
 	count_vm_event(COMPACTSTALL);
 
-	page = get_page_from_freelist(gfp_mask, order, alloc_flags, ac);
+	/* Prep a captured page if available */
+	if (page)
+		prep_new_page(page, order, gfp_mask, alloc_flags);
+
+	/* Try get a page from the freelist if available */
+	if (!page)
+		page = get_page_from_freelist(gfp_mask, order, alloc_flags, ac);
 
 	if (page) {
 		struct zone *zone = page_zone(page);
@@ -3763,9 +3766,6 @@ should_compact_retry(struct alloc_context *ac, int order, int alloc_flags,
 	if (should_compact_lmk_retry(ac, order, alloc_flags))
 		return true;
 
-	if (fatal_signal_pending(current))
-		return false;
-
 	if (compaction_made_progress(compact_result))
 		(*compaction_retries)++;
 
@@ -3778,22 +3778,14 @@ should_compact_retry(struct alloc_context *ac, int order, int alloc_flags,
 		goto check_priority;
 
 	/*
-	 * compaction was skipped because there are not enough order-0 pages
-	 * to work with, so we retry only if it looks like reclaim can help.
-	 */
-	if (compaction_needs_reclaim(compact_result)) {
-		ret = compaction_zonelist_suitable(ac, order, alloc_flags);
-		goto out;
-	}
-
-	/*
 	 * make sure the compaction wasn't deferred or didn't bail out early
 	 * due to locks contention before we declare that we should give up.
-	 * But the next retry should use a higher priority if allowed, so
-	 * we don't just keep bailing out endlessly.
+	 * But do not retry if the given zonelist is not suitable for
+	 * compaction.
 	 */
 	if (compaction_withdrawn(compact_result)) {
-		goto check_priority;
+		ret = compaction_zonelist_suitable(ac, order, alloc_flags);
+		goto out;
 	}
 
 	/*
@@ -3823,12 +3815,6 @@ check_priority:
 		(*compact_priority)--;
 		*compaction_retries = 0;
 		ret = true;
-	} else if (order <= PAGE_ALLOC_COSTLY_ORDER) {
-		/*
-		 * If it's non-alloc-costly order and has enough reclaimable
-		 * memory, retries further to prevent premature OOM kill.
-		 */
-		ret = compaction_zonelist_suitable(ac, order, alloc_flags);
 	}
 out:
 	trace_compact_retry(order, priority, compact_result, retries, max_retries, ret);
@@ -4989,7 +4975,7 @@ long si_mem_available(void)
 		pages[lru] = global_node_page_state(NR_LRU_BASE + lru);
 
 	for_each_zone(zone)
-		wmark_low += zone->watermark[WMARK_LOW];
+		wmark_low += zone->_watermark[WMARK_LOW];
 
 	/*
 	 * Estimate the amount of memory available for userspace allocations,
@@ -7446,13 +7432,13 @@ static void __setup_per_zone_wmarks(void)
 
 			min_pages = zone->managed_pages / 1024;
 			min_pages = clamp(min_pages, SWAP_CLUSTER_MAX, 128UL);
-			zone->watermark[WMARK_MIN] = min_pages;
+			zone->_watermark[WMARK_MIN] = min_pages;
 		} else {
 			/*
 			 * If it's a lowmem zone, reserve a number of pages
 			 * proportionate to the zone's size.
 			 */
-			zone->watermark[WMARK_MIN] = min;
+			zone->_watermark[WMARK_MIN] = min;
 		}
 
 		/*
@@ -7464,9 +7450,10 @@ static void __setup_per_zone_wmarks(void)
 			    mult_frac(zone->managed_pages,
 				      watermark_scale_factor, 10000));
 
-		zone->watermark[WMARK_LOW]  = min_wmark_pages(zone) +
+                zone->watermark_boost = 0;
+		zone->_watermark[WMARK_LOW]  = min_wmark_pages(zone) +
 					low + min;
-		zone->watermark[WMARK_HIGH] = min_wmark_pages(zone) +
+		zone->_watermark[WMARK_HIGH] = min_wmark_pages(zone) +
 					low + min * 2;
 
 		spin_unlock_irqrestore(&zone->lock, flags);
@@ -8013,7 +8000,7 @@ static int __alloc_contig_migrate_range(struct compact_control *cc,
 		cc->nr_migratepages -= nr_reclaimed;
 
 		ret = migrate_pages(&cc->migratepages, alloc_migrate_target,
-				    NULL, 0, cc->mode, MR_CMA);
+				    NULL, 0, cc->mode, MR_CONTIG_RANGE);
 	}
 	if (ret < 0) {
 		putback_movable_pages(&cc->migratepages);

@@ -1152,7 +1152,7 @@ static ICE_noinline int unmap_and_move(new_page_t get_new_page,
 	int *result = NULL;
 	struct page *newpage;
 
-	newpage = get_new_page(page, private, &result);
+	newpage = get_new_page(page, private);
 	if (!newpage)
 		return -ENOMEM;
 
@@ -1293,7 +1293,7 @@ static int unmap_and_move_huge_page(new_page_t get_new_page,
 		return -ENOSYS;
 	}
 
-	new_hpage = get_new_page(hpage, private, &result);
+	new_hpage = get_new_page(hpage, private);
 	if (!new_hpage)
 		return -ENOMEM;
 
