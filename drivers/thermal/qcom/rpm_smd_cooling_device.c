@@ -1,17 +1,12 @@
-/* Copyright (c) 2018, The Linux Foundation. All rights reserved.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 and
- * only version 2 as published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+// SPDX-License-Identifier: GPL-2.0-only
+/*
+ * Copyright (c) 2018, 2021, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #define pr_fmt(fmt) "%s:%s " fmt, KBUILD_MODNAME, __func__
 
+#include <linux/module.h>
 #include <linux/platform_device.h>
 #include <linux/thermal.h>
 #include <linux/err.h>
@@ -101,7 +96,7 @@ static int rpm_smd_set_cur_state(struct thermal_cooling_device *cdev,
 	int ret = 0;
 
 	if (state > (RPM_SMD_TEMP_MAX_NR - 1))
-		state = RPM_SMD_TEMP_MAX_NR - 1;
+		return -EINVAL;
 
 	ret = rpm_smd_send_request_to_rpm(rpm_smd_dev, (unsigned int)state);
 	if (ret)
@@ -128,7 +123,7 @@ static struct thermal_cooling_device_ops rpm_smd_device_ops = {
 
 static int rpm_smd_cdev_remove(struct platform_device *pdev)
 {
-	 struct rpm_smd_cdev *rpm_smd_dev =
+	struct rpm_smd_cdev *rpm_smd_dev =
 		(struct rpm_smd_cdev *)dev_get_drvdata(&pdev->dev);
 
 	if (rpm_smd_dev) {
@@ -190,7 +185,7 @@ static int rpm_smd_cdev_probe(struct platform_device *pdev)
 
 static const struct of_device_id rpm_smd_cdev_of_match[] = {
 	{.compatible = "qcom,rpm-smd-cooling-device", },
-	{}
+	{},
 };
 
 static struct platform_driver rpm_smd_cdev_driver = {
@@ -203,3 +198,4 @@ static struct platform_driver rpm_smd_cdev_driver = {
 };
 
 builtin_platform_driver(rpm_smd_cdev_driver);
+MODULE_LICENSE("GPL v2");

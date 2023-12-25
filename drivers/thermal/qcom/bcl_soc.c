@@ -1,14 +1,6 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2018, The Linux Foundation. All rights reserved.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 and
- * only version 2 as published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * Copyright (c) 2018-2019, The Linux Foundation. All rights reserved.
  */
 
 #define pr_fmt(fmt) "%s:%s " fmt, KBUILD_MODNAME, __func__
@@ -31,7 +23,7 @@
 struct bcl_device {
 	struct notifier_block			psy_nb;
 	struct work_struct			soc_eval_work;
-	long int				trip_temp;
+	long					trip_temp;
 	int					trip_val;
 	struct mutex				state_trans_lock;
 	bool					irq_enabled;
@@ -89,6 +81,9 @@ static void bcl_evaluate_soc(struct work_struct *work)
 {
 	int battery_percentage;
 
+	if (!bcl_perph->tz_dev)
+		return;
+
 	if (bcl_read_soc(NULL, &battery_percentage))
 		return;
 
@@ -100,11 +95,9 @@ static void bcl_evaluate_soc(struct work_struct *work)
 
 	bcl_perph->trip_val = battery_percentage;
 	mutex_unlock(&bcl_perph->state_trans_lock);
-
-	return; //return before thermal handle trips with percentage
-
 	of_thermal_handle_trip(bcl_perph->tz_dev);
 
+	return;
 eval_exit:
 	mutex_unlock(&bcl_perph->state_trans_lock);
 }

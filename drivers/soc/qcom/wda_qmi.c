@@ -84,7 +84,7 @@ static struct qmi_elem_info wda_set_powersave_config_req_msg_v01_ei[] = {
 		.data_type	= QMI_STRUCT,
 		.elem_len	= 1,
 		.elem_size	= sizeof(struct data_ep_id_type_v01),
-		.is_array	= NO_ARRAY,
+		.array_type	= NO_ARRAY,
 		.tlv_type	= 0x01,
 		.offset		= offsetof(struct
 				wda_set_powersave_config_req_msg_v01,
@@ -95,7 +95,7 @@ static struct qmi_elem_info wda_set_powersave_config_req_msg_v01_ei[] = {
 		.data_type	= QMI_OPT_FLAG,
 		.elem_len	= 1,
 		.elem_size	= sizeof(uint8_t),
-		.is_array	= NO_ARRAY,
+		.array_type	= NO_ARRAY,
 		.tlv_type	= 0x10,
 		.offset		= offsetof(struct
 				wda_set_powersave_config_req_msg_v01,
@@ -107,7 +107,7 @@ static struct qmi_elem_info wda_set_powersave_config_req_msg_v01_ei[] = {
 		.elem_len	= 1,
 		.elem_size	= sizeof(enum
 					 wda_powersave_config_mask_enum_v01),
-		.is_array	= NO_ARRAY,
+		.array_type	= NO_ARRAY,
 		.tlv_type	= 0x10,
 		.offset		= offsetof(struct
 				wda_set_powersave_config_req_msg_v01,
@@ -116,7 +116,7 @@ static struct qmi_elem_info wda_set_powersave_config_req_msg_v01_ei[] = {
 	},
 	{
 		.data_type	= QMI_EOTI,
-		.is_array	= NO_ARRAY,
+		.array_type	= NO_ARRAY,
 		.tlv_type	= QMI_COMMON_TLV_TYPE,
 	},
 };
@@ -126,7 +126,7 @@ static struct qmi_elem_info wda_set_powersave_config_resp_msg_v01_ei[] = {
 		.data_type	= QMI_STRUCT,
 		.elem_len	= 1,
 		.elem_size	= sizeof(struct qmi_response_type_v01),
-		.is_array	= NO_ARRAY,
+		.array_type	= NO_ARRAY,
 		.tlv_type	= 0x02,
 		.offset		= offsetof(struct
 					wda_set_powersave_config_resp_msg_v01,
@@ -137,7 +137,7 @@ static struct qmi_elem_info wda_set_powersave_config_resp_msg_v01_ei[] = {
 		.data_type	= QMI_OPT_FLAG,
 		.elem_len	= 1,
 		.elem_size	= sizeof(uint8_t),
-		.is_array	= NO_ARRAY,
+		.array_type	= NO_ARRAY,
 		.tlv_type	= 0x10,
 		.offset		= offsetof(struct
 					wda_set_powersave_config_resp_msg_v01,
@@ -149,7 +149,7 @@ static struct qmi_elem_info wda_set_powersave_config_resp_msg_v01_ei[] = {
 		.elem_len	= 1,
 		.elem_size	= sizeof(enum
 					 wda_powersave_config_mask_enum_v01),
-		.is_array	= NO_ARRAY,
+		.array_type	= NO_ARRAY,
 		.tlv_type	= 0x10,
 		.offset		= offsetof(struct
 					wda_set_powersave_config_resp_msg_v01,
@@ -158,7 +158,7 @@ static struct qmi_elem_info wda_set_powersave_config_resp_msg_v01_ei[] = {
 	},
 	{
 		.data_type	= QMI_EOTI,
-		.is_array	= NO_ARRAY,
+		.array_type	= NO_ARRAY,
 		.tlv_type	= QMI_COMMON_TLV_TYPE,
 	},
 };
@@ -168,7 +168,7 @@ static struct qmi_elem_info wda_set_powersave_mode_req_msg_v01_ei[] = {
 		.data_type	= QMI_UNSIGNED_1_BYTE,
 		.elem_len	= 1,
 		.elem_size	= sizeof(uint8_t),
-		.is_array	= NO_ARRAY,
+		.array_type	= NO_ARRAY,
 		.tlv_type	= 0x01,
 		.offset		= offsetof(struct
 					   wda_set_powersave_mode_req_msg_v01,
@@ -177,7 +177,7 @@ static struct qmi_elem_info wda_set_powersave_mode_req_msg_v01_ei[] = {
 	},
 	{
 		.data_type	= QMI_EOTI,
-		.is_array	= NO_ARRAY,
+		.array_type	= NO_ARRAY,
 		.tlv_type	= QMI_COMMON_TLV_TYPE,
 	},
 };
@@ -187,7 +187,7 @@ static struct qmi_elem_info wda_set_powersave_mode_resp_msg_v01_ei[] = {
 		.data_type	= QMI_STRUCT,
 		.elem_len	= 1,
 		.elem_size	= sizeof(struct qmi_response_type_v01),
-		.is_array	= NO_ARRAY,
+		.array_type	= NO_ARRAY,
 		.tlv_type	= 0x02,
 		.offset		= offsetof(struct
 					   wda_set_powersave_mode_resp_msg_v01,
@@ -196,7 +196,7 @@ static struct qmi_elem_info wda_set_powersave_mode_resp_msg_v01_ei[] = {
 	},
 	{
 		.data_type	= QMI_EOTI,
-		.is_array	= NO_ARRAY,
+		.array_type	= NO_ARRAY,
 		.tlv_type	= QMI_COMMON_TLV_TYPE,
 	},
 };

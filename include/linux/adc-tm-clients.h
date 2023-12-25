@@ -66,6 +66,7 @@ enum adc_tm_state_request {
 };
 
 struct adc_tm_param {
+        unsigned long		id;
 	int			low_thr;
 	int			high_thr;
 	uint32_t				channel;
