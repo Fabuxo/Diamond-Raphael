@@ -16,7 +16,7 @@ TARGET_IMAGE="Image.gz-dtb"
 TARGET_DTBO="dtbo.img"
 
 # Toolchains
-CLANG_LOC="/home/ghost/clang"
+CLANG_LOC="/home/ghost/aospclang"
 CLANG="${CLANG_LOC}/bin:$PATH"
 CT_BIN="${CLANG}/bin/"
 CT="${CT_BIN}/clang"
