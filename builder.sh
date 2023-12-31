@@ -53,8 +53,8 @@ function parse_parameters()
 {
 	PARAMS="${*}"
 	# Build settings
-	BUILD_CASEFOLDING=false
-	BUILD_CLEAN=false
+	BUILD_CASEFOLDING=true
+	BUILD_CLEAN=true
 	BUILD_LTO=true
 	BUILD_FULL_LTO=false
 	BUILD_KSU=false
