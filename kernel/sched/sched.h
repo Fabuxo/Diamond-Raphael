@@ -25,6 +25,10 @@
 #include <linux/u64_stats_sync.h>
 #include <linux/kernel_stat.h>
 #include <linux/binfmts.h>
+#include <linux/cpufreq.h>
+#include <linux/cpuidle.h>
+#include <linux/cpuset.h>
+#include <linux/ctype.h>
 #include <linux/mutex.h>
 #include <linux/psi.h>
 #include <linux/spinlock.h>
@@ -117,6 +121,7 @@ struct sched_cluster {
 };
 
 extern unsigned int sched_disable_window_stats;
+extern cpumask_t asym_cap_sibling_cpus;
 
 extern struct timer_list sched_grp_timer;
 #endif /* CONFIG_SCHED_WALT */
@@ -2004,7 +2009,7 @@ extern unsigned long sched_get_rt_rq_util(int cpu);
 
 #ifndef arch_scale_freq_capacity
 static __always_inline
-unsigned long arch_scale_freq_capacity(struct sched_domain *sd, int cpu)
+unsigned long arch_scale_freq_capacity(int cpu)
 {
 	return SCHED_CAPACITY_SCALE;
 }
@@ -2240,7 +2245,7 @@ add_capacity_margin(unsigned long cpu_capacity, int cpu)
 
 static inline void sched_rt_avg_update(struct rq *rq, u64 rt_delta)
 {
-	rq->rt_avg += rt_delta * arch_scale_freq_capacity(NULL, cpu_of(rq));
+	rq->rt_avg += rt_delta * arch_scale_freq_capacity(cpu_of(rq));
 	sched_avg_update(rq);
 }
 #else
@@ -2732,11 +2737,11 @@ walt_task_in_cum_window_demand(struct rq *rq, struct task_struct *p)
 #endif /* CONFIG_SCHED_WALT */
 
 #ifdef arch_scale_freq_capacity
-#ifndef arch_scale_freq_invariant
-#define arch_scale_freq_invariant()	(true)
-#endif
-#else /* arch_scale_freq_capacity */
-#define arch_scale_freq_invariant()	(false)
+# ifndef arch_scale_freq_invariant
+#  define arch_scale_freq_invariant()	true
+# endif
+#else
+# define arch_scale_freq_invariant()	false
 #endif
 
 enum sched_boost_policy {
@@ -2761,6 +2766,12 @@ enum sched_boost_policy {
 #define group_rq_capacity(group) cpu_capacity(group_first_cpu(group))
 
 #ifdef CONFIG_SCHED_WALT
+
+#define WALT_MANY_WAKEUP_DEFAULT 1000
+static inline bool walt_want_remote_wakeup(void)
+{
+	return sysctl_sched_many_wakeup_threshold < WALT_MANY_WAKEUP_DEFAULT;
+}
 
 static inline int cluster_first_cpu(struct sched_cluster *cluster)
 {
