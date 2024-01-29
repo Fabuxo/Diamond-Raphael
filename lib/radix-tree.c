@@ -119,7 +119,7 @@ bool is_sibling_entry(const struct radix_tree_node *parent, void *node)
 static inline unsigned long
 get_slot_offset(const struct radix_tree_node *parent, void __rcu **slot)
 {
-	return parent ? slot - parent->slots : 0;
+	return slot - parent->slots;
 }
 
 static unsigned int radix_tree_descend(const struct radix_tree_node *parent,
@@ -2109,6 +2109,14 @@ void idr_preload(gfp_t gfp_mask)
 }
 EXPORT_SYMBOL(idr_preload);
 
+/**
+ * ida_pre_get - reserve resources for ida allocation
+ * @ida: ida handle
+ * @gfp: memory allocation flags
+ *
+ * This function should be called before calling ida_get_new_above().  If it
+ * is unable to allocate memory, it will return %0.  On success, it returns %1.
+ */
 int ida_pre_get(struct ida *ida, gfp_t gfp)
 {
 	/*
@@ -2129,6 +2137,7 @@ int ida_pre_get(struct ida *ida, gfp_t gfp)
 
 	return 1;
 }
+EXPORT_SYMBOL(ida_pre_get);
 
 void __rcu **idr_get_free_cmn(struct radix_tree_root *root,
 			      struct radix_tree_iter *iter, gfp_t gfp,

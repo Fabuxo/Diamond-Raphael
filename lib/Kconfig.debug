@@ -1942,9 +1942,6 @@ config TEST_HASH
 	  This is intended to help people writing architecture-specific
 	  optimized versions.  If unsure, say N.
 
-config TEST_IDA
-	tristate "Perform selftest on IDA functions"
-
 config TEST_PARMAN
 	tristate "Perform selftest on priority array manager"
 	default n

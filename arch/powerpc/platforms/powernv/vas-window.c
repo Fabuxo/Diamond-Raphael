@@ -487,17 +487,35 @@ int init_winctx_regs(struct vas_window *window, struct vas_winctx *winctx)
 	return 0;
 }
 
+static DEFINE_SPINLOCK(vas_ida_lock);
+
 static void vas_release_window_id(struct ida *ida, int winid)
 {
-	ida_free(ida, winid);
+	spin_lock(&vas_ida_lock);
+	ida_remove(ida, winid);
+	spin_unlock(&vas_ida_lock);
 }
 
 static int vas_assign_window_id(struct ida *ida)
 {
-	int winid = ida_alloc_max(ida, VAS_WINDOWS_PER_CHIP - 1, GFP_KERNEL);
+	int rc, winid;
 
-	if (winid == -ENOSPC) {
-		pr_err("Too many (%d) open windows\n", VAS_WINDOWS_PER_CHIP);
+	do {
+		rc = ida_pre_get(ida, GFP_KERNEL);
+		if (!rc)
+			return -EAGAIN;
+
+		spin_lock(&vas_ida_lock);
+		rc = ida_get_new(ida, &winid);
+		spin_unlock(&vas_ida_lock);
+	} while (rc == -EAGAIN);
+
+	if (rc)
+		return rc;
+
+	if (winid > VAS_WINDOWS_PER_CHIP) {
+		pr_err("Too many (%d) open windows\n", winid);
+		vas_release_window_id(ida, winid);
 		return -EAGAIN;
 	}
 

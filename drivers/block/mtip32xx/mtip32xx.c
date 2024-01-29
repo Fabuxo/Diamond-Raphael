@@ -118,6 +118,7 @@ static struct dentry *dfs_device_status;
 
 static u32 cpu_use[NR_CPUS];
 
+static DEFINE_SPINLOCK(rssd_index_lock);
 static DEFINE_IDA(rssd_index_ida);
 
 static int mtip_block_initialize(struct driver_data *dd);
@@ -3782,10 +3783,20 @@ static int mtip_block_initialize(struct driver_data *dd)
 		goto alloc_disk_error;
 	}
 
-	rv = ida_alloc(&rssd_index_ida, GFP_KERNEL);
-	if (rv < 0)
+	/* Generate the disk name, implemented same as in sd.c */
+	do {
+		if (!ida_pre_get(&rssd_index_ida, GFP_KERNEL)) {
+			rv = -ENOMEM;
+			goto ida_get_error;
+		}
+
+		spin_lock(&rssd_index_lock);
+		rv = ida_get_new(&rssd_index_ida, &index);
+		spin_unlock(&rssd_index_lock);
+	} while (rv == -EAGAIN);
+
+	if (rv)
 		goto ida_get_error;
-	index = rv;
 
 	rv = rssd_disk_name_format("rssd",
 				index,
@@ -3928,7 +3939,9 @@ block_queue_alloc_init_error:
 block_queue_alloc_tag_error:
 	mtip_hw_debugfs_exit(dd);
 disk_index_error:
-	ida_free(&rssd_index_ida, index);
+	spin_lock(&rssd_index_lock);
+	ida_remove(&rssd_index_ida, index);
+	spin_unlock(&rssd_index_lock);
 
 ida_get_error:
 	put_disk(dd->disk);
@@ -4016,7 +4029,9 @@ static int mtip_block_remove(struct driver_data *dd)
 	}
 	dd->disk  = NULL;
 
-	ida_free(&rssd_index_ida, dd->index);
+	spin_lock(&rssd_index_lock);
+	ida_remove(&rssd_index_ida, dd->index);
+	spin_unlock(&rssd_index_lock);
 
 	/* De-initialize the protocol layer. */
 	mtip_hw_exit(dd);
@@ -4056,7 +4071,9 @@ static int mtip_block_shutdown(struct driver_data *dd)
 		dd->queue = NULL;
 	}
 
-	ida_free(&rssd_index_ida, dd->index);
+	spin_lock(&rssd_index_lock);
+	ida_remove(&rssd_index_ida, dd->index);
+	spin_unlock(&rssd_index_lock);
 	return 0;
 }
 
