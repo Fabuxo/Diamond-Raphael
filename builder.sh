@@ -8,7 +8,7 @@
 # Build Information and directories
 kernel_dir="${PWD}"
 builddir="${kernel_dir}/Zip-out"
-kVersion="1.2"
+kVersion="1.4"
 
 # Arch and target image
 export ARCH="arm64"
@@ -54,7 +54,7 @@ function parse_parameters()
 	PARAMS="${*}"
 	# Build settings
 	BUILD_CASEFOLDING=false
-	BUILD_CLEAN=false
+	BUILD_CLEAN=true
 	BUILD_LTO=true
 	BUILD_FULL_LTO=false
 	BUILD_KSU=false
