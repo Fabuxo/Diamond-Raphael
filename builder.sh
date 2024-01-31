@@ -274,7 +274,7 @@ function completion()
 
 		add_to_banner "--------------------------------------"
 		add_to_banner " ${KERNEL_NAME}"
-		add_to_banner " HEAD:${kVersion//-/}"
+		add_to_banner " VERSION:${kVersion//-/}"
 		if [[ ${CUSTOM_NAME} != "" ]]; then
 			add_to_banner " Name:${CUSTOM_NAME//-/}"
 		fi
