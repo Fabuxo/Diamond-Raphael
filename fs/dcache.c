@@ -623,19 +623,13 @@ failed:
 	return dentry; /* try again with same dentry */
 }
 
-static inline struct dentry *lock_parent(struct dentry *dentry)
+static struct dentry *__lock_parent(struct dentry *dentry)
 {
-	struct dentry *parent = dentry->d_parent;
-	if (IS_ROOT(dentry))
-		return NULL;
-	if (unlikely(dentry->d_lockref.count < 0))
-		return NULL;
-	if (likely(spin_trylock(&parent->d_lock)))
-		return parent;
+	struct dentry *parent;
 	rcu_read_lock();
 	spin_unlock(&dentry->d_lock);
 again:
-	parent = ACCESS_ONCE(dentry->d_parent);
+	parent = READ_ONCE(dentry->d_parent);
 	spin_lock(&parent->d_lock);
 	/*
 	 * We can't blindly lock dentry until we are sure
@@ -649,17 +643,22 @@ again:
 		spin_unlock(&parent->d_lock);
 		goto again;
 	}
-	if (parent != dentry) {
-		spin_lock_nested(&dentry->d_lock, DENTRY_D_LOCK_NESTED);
-		if (unlikely(dentry->d_lockref.count < 0)) {
-			spin_unlock(&parent->d_lock);
-			parent = NULL;
-		}
-	} else {
-		parent = NULL;
-	}
 	rcu_read_unlock();
+	if (parent != dentry)
+		spin_lock_nested(&dentry->d_lock, DENTRY_D_LOCK_NESTED);
+	else
+		parent = NULL;
 	return parent;
+}
+
+static inline struct dentry *lock_parent(struct dentry *dentry)
+{
+	struct dentry *parent = dentry->d_parent;
+	if (IS_ROOT(dentry))
+		return NULL;
+	if (likely(spin_trylock(&parent->d_lock)))
+		return parent;
+	return __lock_parent(dentry);
 }
 
 /*
@@ -731,7 +730,7 @@ static inline bool fast_dput(struct dentry *dentry)
 	 * around with a zero refcount.
 	 */
 	smp_rmb();
-	d_flags = ACCESS_ONCE(dentry->d_flags);
+	d_flags = READ_ONCE(dentry->d_flags);
 	d_flags &= DCACHE_REFERENCED | DCACHE_LRU_LIST | DCACHE_DISCONNECTED;
 
 	/* Nothing to do? Dropping the reference was all we needed? */
@@ -854,17 +853,19 @@ struct dentry *dget_parent(struct dentry *dentry)
 {
 	int gotref;
 	struct dentry *ret;
+	unsigned seq;
 
 	/*
 	 * Do optimistic parent lookup without any
 	 * locking.
 	 */
 	rcu_read_lock();
-	ret = ACCESS_ONCE(dentry->d_parent);
+	seq = raw_seqcount_begin(&dentry->d_seq);
+	ret = READ_ONCE(dentry->d_parent);
 	gotref = lockref_get_not_zero(&ret->d_lockref);
 	rcu_read_unlock();
 	if (likely(gotref)) {
-		if (likely(ret == ACCESS_ONCE(dentry->d_parent)))
+		if (!read_seqcount_retry(&dentry->d_seq, seq))
 			return ret;
 		dput(ret);
 	}
@@ -3101,7 +3102,7 @@ static int prepend(char **buffer, int *buflen, const char *str, int namelen)
  * @buflen: allocated length of the buffer
  * @name:   name string and length qstr structure
  *
- * With RCU path tracing, it may race with d_move(). Use ACCESS_ONCE() to
+ * With RCU path tracing, it may race with d_move(). Use READ_ONCE() to
  * make sure that either the old or the new name pointer and length are
  * fetched. However, there may be mismatch between length and pointer.
  * The length cannot be trusted, we need to copy it byte-by-byte until
@@ -3115,8 +3116,8 @@ static int prepend(char **buffer, int *buflen, const char *str, int namelen)
  */
 static int prepend_name(char **buffer, int *buflen, const struct qstr *name)
 {
-	const char *dname = ACCESS_ONCE(name->name);
-	u32 dlen = ACCESS_ONCE(name->len);
+	const char *dname = READ_ONCE(name->name);
+	u32 dlen = READ_ONCE(name->len);
 	char *p;
 
 	smp_read_barrier_depends();
@@ -3176,7 +3177,7 @@ restart:
 		struct dentry * parent;
 
 		if (dentry == vfsmnt->mnt_root || IS_ROOT(dentry)) {
-			struct mount *parent = ACCESS_ONCE(mnt->mnt_parent);
+			struct mount *parent = READ_ONCE(mnt->mnt_parent);
 			/* Escaped? */
 			if (dentry != vfsmnt->mnt_root) {
 				bptr = *buffer;
@@ -3186,7 +3187,7 @@ restart:
 			}
 			/* Global root? */
 			if (mnt != parent) {
-				dentry = ACCESS_ONCE(mnt->mnt_mountpoint);
+				dentry = READ_ONCE(mnt->mnt_mountpoint);
 				mnt = parent;
 				vfsmnt = &mnt->mnt;
 				continue;
