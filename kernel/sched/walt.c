@@ -140,8 +140,8 @@ unsigned int walt_rotation_enabled;
  * IMPORTANT: Initialize both copies to same value!!
  */
 
+__read_mostly unsigned int sysctl_sched_asym_cap_sibling_freq_match_pct = 100;
 __read_mostly unsigned int sched_ravg_hist_size = 5;
-__read_mostly unsigned int sysctl_sched_ravg_hist_size = 5;
 
 static __read_mostly unsigned int sched_io_is_busy = 1;
 
@@ -157,7 +157,7 @@ __read_mostly unsigned int sched_ravg_window = MIN_SCHED_RAVG_WINDOW;
  * A after-boot constant divisor for cpu_util_freq_walt() to apply the load
  * boost.
  */
-__read_mostly unsigned int walt_cpu_util_freq_divisor;
+static __read_mostly unsigned int walt_cpu_util_freq_divisor;
 
 /* Initial task load. Newly created tasks are assigned this load. */
 unsigned int __read_mostly sched_init_task_load_windows;
@@ -548,6 +548,77 @@ done:
 				sysctl_sched_little_cluster_coloc_fmin_khz,
 				coloc_boost_load);
 	return load;
+}
+
+static bool rtgb_active;
+
+static inline unsigned long
+__cpu_util_freq_walt(int cpu, struct sched_walt_cpu_load *walt_load)
+{
+	u64 util, util_unboosted;
+	struct rq *rq = cpu_rq(cpu);
+	unsigned long capacity = capacity_orig_of(cpu);
+	int boost;
+
+	boost = per_cpu(sched_load_boost, cpu);
+	util_unboosted = util = freq_policy_load(rq);
+	util = div64_u64(util * (100 + boost),
+			walt_cpu_util_freq_divisor);
+
+	if (walt_load) {
+		u64 nl = cpu_rq(cpu)->nt_prev_runnable_sum +
+				rq->grp_time.nt_prev_runnable_sum;
+		u64 pl = rq->walt_stats.pred_demands_sum_scaled;
+
+		/* do_pl_notif() needs unboosted signals */
+		rq->old_busy_time = div64_u64(util_unboosted,
+						sched_ravg_window >>
+						SCHED_CAPACITY_SHIFT);
+		rq->old_estimated_time = pl;
+
+		nl = div64_u64(nl * (100 + boost), walt_cpu_util_freq_divisor);
+
+		walt_load->nl = nl;
+		walt_load->pl = pl;
+		walt_load->ws = walt_load_reported_window;
+		walt_load->rtgb_active = rtgb_active;
+	}
+
+	return (util >= capacity) ? capacity : util;
+}
+
+#define ADJUSTED_ASYM_CAP_CPU_UTIL(orig, other, x)	\
+			(max(orig, mult_frac(other, x, 100)))
+
+unsigned long
+cpu_util_freq_walt(int cpu, struct sched_walt_cpu_load *walt_load)
+{
+	struct sched_walt_cpu_load wl_other = {0};
+	unsigned long util = 0, util_other = 0;
+	unsigned long capacity = capacity_orig_of(cpu);
+	int i, mpct = sysctl_sched_asym_cap_sibling_freq_match_pct;
+
+	if (!cpumask_test_cpu(cpu, &asym_cap_sibling_cpus))
+		return __cpu_util_freq_walt(cpu, walt_load);
+
+	for_each_cpu(i, &asym_cap_sibling_cpus) {
+		if (i == cpu)
+			util = __cpu_util_freq_walt(cpu, walt_load);
+		else
+			util_other = __cpu_util_freq_walt(i, &wl_other);
+	}
+
+	if (cpu == cpumask_last(&asym_cap_sibling_cpus))
+		mpct = 100;
+
+	util = ADJUSTED_ASYM_CAP_CPU_UTIL(util, util_other, mpct);
+
+	walt_load->nl = ADJUSTED_ASYM_CAP_CPU_UTIL(walt_load->nl, wl_other.nl,
+						   mpct);
+	walt_load->pl = ADJUSTED_ASYM_CAP_CPU_UTIL(walt_load->pl, wl_other.pl,
+						   mpct);
+
+	return (util >= capacity) ? capacity : util;
 }
 
 /*
