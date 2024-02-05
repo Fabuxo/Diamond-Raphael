@@ -201,6 +201,9 @@ unsigned int sched_capacity_margin_down[NR_CPUS] = {
 unsigned int sysctl_sched_min_task_util_for_boost = 51;
 /* 0.68ms default for 20ms window size scaled to 1024 */
 unsigned int sysctl_sched_min_task_util_for_colocation = 35;
+__read_mostly unsigned int sysctl_sched_prefer_spread;
+unsigned int sysctl_walt_rtg_cfs_boost_prio = 99; /* disabled by default */
+unsigned int sysctl_walt_low_latency_task_threshold; /* disabled by default */
 #endif
 
 static inline void update_load_add(struct load_weight *lw, unsigned long inc)
@@ -3748,11 +3751,10 @@ static inline unsigned long _task_util_est(struct task_struct *p)
 	return max(ue.ewma, ue.enqueued);
 }
 
-static inline unsigned long task_util_est(struct task_struct *p)
+unsigned long task_util_est(struct task_struct *p)
 {
 #ifdef CONFIG_SCHED_WALT
-	if (likely(!walt_disabled && sysctl_sched_use_walt_task_util))
-		return p->ravg.demand_scaled;
+	return p->ravg.demand_scaled;
 #endif
 	return max(task_util(p), _task_util_est(p));
 }
@@ -8043,9 +8045,8 @@ static int find_energy_efficient_cpu(struct sched_domain *sd,
 			goto out;
 
 #ifdef CONFIG_SCHED_WALT
-		if (!walt_disabled && sysctl_sched_use_walt_cpu_util &&
-		    p->state == TASK_WAKING)
-			delta = task_util(p);
+	if (p->state == TASK_WAKING)
+		delta = task_util(p);
 #endif
 		if (task_placement_boost_enabled(p) || need_idle || boosted ||
 		    (rtg_target && (!cpumask_test_cpu(prev_cpu, rtg_target) ||

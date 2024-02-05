@@ -73,6 +73,7 @@ struct walt_sched_stats {
 	int nr_big_tasks;
 	u64 cumulative_runnable_avg_scaled;
 	u64 pred_demands_sum_scaled;
+	unsigned int nr_rtg_high_prio_tasks;
 };
 
 struct cpu_cycle {
@@ -962,6 +963,7 @@ struct rq {
 	int cstate, wakeup_latency, wakeup_energy;
 	u64 window_start;
 	s64 cum_window_start;
+	u32 prev_window_size;
 	unsigned long walt_flags;
 
 	u64 cur_irqload;
@@ -970,6 +972,7 @@ struct rq {
 	unsigned int static_cpu_pwr_cost;
 	struct task_struct *ed_task;
 	struct cpu_cycle cc;
+	u64 task_exec_scale;
 	u64 old_busy_time, old_busy_time_group;
 	u64 old_estimated_time;
 	u64 curr_runnable_sum;
@@ -2139,12 +2142,6 @@ static inline unsigned long cpu_util_cum(int cpu, int delta)
 	return (delta >= capacity) ? capacity : delta;
 }
 
-
-#ifdef CONFIG_SCHED_WALT
-u64 freq_policy_load(struct rq *rq);
-
-extern u64 walt_load_reported_window;
-
 #ifdef CONFIG_SCHED_WALT
 u64 sched_ktime_clock(void);
 unsigned long
@@ -2209,16 +2206,6 @@ add_capacity_margin(unsigned long cpu_capacity, int cpu)
 }
 
 #endif /* CONFIG_SMP */
-
-static inline void sched_rt_avg_update(struct rq *rq, u64 rt_delta)
-{
-	rq->rt_avg += rt_delta * arch_scale_freq_capacity(cpu_of(rq));
-	sched_avg_update(rq);
-}
-#else
-static inline void sched_rt_avg_update(struct rq *rq, u64 rt_delta) { }
-static inline void sched_avg_update(struct rq *rq) { }
-#endif
 
 #ifdef CONFIG_SMP
 #ifdef CONFIG_PREEMPT
@@ -2824,8 +2811,11 @@ struct related_thread_group {
 	struct list_head tasks;
 	struct list_head list;
 	struct sched_cluster *preferred_cluster;
+	bool skip_min;
 	struct rcu_head rcu;
 	u64 last_update;
+	u64 downmigrate_ts;
+	u64 start_ts;
 };
 
 extern struct list_head cluster_head;
@@ -2863,7 +2853,6 @@ extern unsigned int __read_mostly sched_init_task_load_windows;
 extern unsigned int up_down_migrate_scale_factor;
 extern unsigned int sysctl_sched_restrict_cluster_spill;
 extern unsigned int sched_pred_alert_load;
-extern struct sched_cluster init_cluster;
 extern unsigned int  __read_mostly sched_short_sleep_task_threshold;
 extern unsigned int  __read_mostly sched_long_cpu_selection_threshold;
 extern unsigned int  __read_mostly sched_big_waker_task_load;
@@ -2876,7 +2865,7 @@ extern unsigned int  __read_mostly sched_load_granule;
 
 extern int register_cpu_cycle_counter_cb(struct cpu_cycle_counter_cb *cb);
 extern int update_preferred_cluster(struct related_thread_group *grp,
-			struct task_struct *p, u32 old_load);
+			struct task_struct *p, u32 old_load, bool from_tick);
 extern void set_preferred_cluster(struct related_thread_group *grp);
 extern void add_new_task_to_grp(struct task_struct *new);
 
@@ -3129,6 +3118,12 @@ struct related_thread_group *task_related_thread_group(struct task_struct *p)
 	return rcu_dereference(p->grp);
 }
 
+static inline bool task_rtg_high_prio(struct task_struct *p)
+{
+	return task_in_related_thread_group(p) &&
+		(p->prio <= sysctl_walt_rtg_cfs_boost_prio);
+}
+
 /* Is frequency of two cpus synchronized with each other? */
 static inline int same_freq_domain(int src_cpu, int dst_cpu)
 {
@@ -3269,9 +3264,6 @@ static inline enum sched_boost_policy task_boost_policy(struct task_struct *p)
 	return policy;
 }
 
-extern void walt_map_freq_to_load(void);
-extern void walt_update_min_max_capacity(void);
-
 static inline bool is_min_capacity_cluster(struct sched_cluster *cluster)
 {
 	return is_min_capacity_cpu(cluster_first_cpu(cluster));
@@ -3348,11 +3340,16 @@ struct related_thread_group *task_related_thread_group(struct task_struct *p)
 	return NULL;
 }
 
+static inline bool task_rtg_high_prio(struct task_struct *p)
+{
+	return false;
+}
+
 static inline u32 task_load(struct task_struct *p) { return 0; }
 static inline u32 task_pl(struct task_struct *p) { return 0; }
 
 static inline int update_preferred_cluster(struct related_thread_group *grp,
-			 struct task_struct *p, u32 old_load)
+			 struct task_struct *p, u32 old_load, bool from_tick)
 {
 	return 0;
 }
@@ -3409,5 +3406,6 @@ struct sched_avg_stats {
 	int nr;
 	int nr_misfit;
 	int nr_max;
+	int nr_scaled;
 };
 extern void sched_get_nr_running_avg(struct sched_avg_stats *stats);

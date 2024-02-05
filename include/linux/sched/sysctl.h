@@ -46,9 +46,21 @@ extern unsigned int sysctl_sched_min_task_util_for_boost;
 extern unsigned int sysctl_sched_min_task_util_for_colocation;
 extern unsigned int sysctl_sched_little_cluster_coloc_fmin_khz;
 extern unsigned int sysctl_sched_asym_cap_sibling_freq_match_pct;
+extern unsigned int sysctl_sched_prefer_spread;
+extern unsigned int sysctl_walt_rtg_cfs_boost_prio;
+extern unsigned int sysctl_walt_low_latency_task_threshold;
 
 extern int
-walt_proc_update_handler(struct ctl_table *table, int write,
+walt_proc_group_thresholds_handler(struct ctl_table *table, int write,
+			 void __user *buffer, size_t *lenp,
+			 loff_t *ppos);
+extern int
+walt_proc_user_hint_handler(struct ctl_table *table, int write,
+			 void __user *buffer, size_t *lenp,
+			 loff_t *ppos);
+
+extern int
+sched_ravg_window_handler(struct ctl_table *table, int write,
 			 void __user *buffer, size_t *lenp,
 			 loff_t *ppos);
 

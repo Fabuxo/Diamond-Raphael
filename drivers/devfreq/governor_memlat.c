@@ -297,7 +297,8 @@ static int devfreq_memlat_get_freq(struct devfreq *df,
 					hw->core_stats[i].inst_count,
 					hw->core_stats[i].mem_count,
 					hw->core_stats[i].freq,
-					hw->core_stats[i].stall_pct, ratio);
+					hw->core_stats[i].stall_pct,
+					hw->core_stats[i].wb_pct, ratio);
 
 		if (!hw->core_stats[i].inst_count
 		    || !hw->core_stats[i].freq)

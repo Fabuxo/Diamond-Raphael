@@ -30,6 +30,7 @@ struct dev_stats {
 	unsigned long mem_count;
 	unsigned long freq;
 	unsigned long stall_pct;
+	unsigned long wb_pct;
 };
 
 struct core_dev_map {

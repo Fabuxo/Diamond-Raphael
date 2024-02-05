@@ -2199,7 +2199,7 @@ static inline void walt_try_to_wake_up(struct task_struct *p)
 
 	rcu_read_lock();
 	grp = task_related_thread_group(p);
-	if (update_preferred_cluster(grp, p, old_load))
+	if (update_preferred_cluster(grp, p, old_load, false))
 		set_preferred_cluster(grp);
 	rcu_read_unlock();
 }
@@ -3438,7 +3438,7 @@ void scheduler_tick(void)
 
 	rcu_read_lock();
 	grp = task_related_thread_group(curr);
-	if (update_preferred_cluster(grp, curr, old_load))
+	if (update_preferred_cluster(grp, curr, old_load, true))
 		set_preferred_cluster(grp);
 	rcu_read_unlock();
 
@@ -6570,7 +6570,6 @@ int sched_cpu_activate(unsigned int cpu)
 	rq_unlock_irqrestore(rq, &rf);
 
 	update_max_interval();
-	walt_update_min_max_capacity();
 
 	return 0;
 }
@@ -6606,7 +6605,6 @@ int sched_cpu_deactivate(unsigned int cpu)
 		return ret;
 	}
 	sched_domains_numa_masks_clear(cpu);
-	walt_update_min_max_capacity();
 	return 0;
 }
 
