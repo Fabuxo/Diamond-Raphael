@@ -1384,7 +1384,7 @@ long do_shmat(int shmid, char __user *shmaddr, int shmflg,
 	struct ipc_namespace *ns;
 	struct shm_file_data *sfd;
 	struct path path;
-	int f_flags;
+	fmode_t f_mode;
 	unsigned long populate = 0;
 
 	err = -EINVAL;
@@ -1417,11 +1417,11 @@ long do_shmat(int shmid, char __user *shmaddr, int shmflg,
 	if (shmflg & SHM_RDONLY) {
 		prot = PROT_READ;
 		acc_mode = S_IRUGO;
-		f_flags = O_RDONLY;
+		f_mode = FMODE_READ;
 	} else {
 		prot = PROT_READ | PROT_WRITE;
 		acc_mode = S_IRUGO | S_IWUGO;
-		f_flags = O_RDWR;
+		f_mode = FMODE_READ | FMODE_WRITE;
 	}
 	if (shmflg & SHM_EXEC) {
 		prot |= PROT_EXEC;
@@ -1471,7 +1471,7 @@ long do_shmat(int shmid, char __user *shmaddr, int shmflg,
 		goto out_nattch;
 	}
 
-	file = alloc_file(&path, f_flags,
+	file = alloc_file(&path, f_mode,
 			  is_file_hugepages(shp->shm_file) ?
 				&shm_file_operations_huge :
 				&shm_file_operations);

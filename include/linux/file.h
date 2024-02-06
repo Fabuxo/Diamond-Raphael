@@ -19,7 +19,7 @@ struct file_operations;
 struct vfsmount;
 struct dentry;
 struct path;
-extern struct file *alloc_file(const struct path *, int flags,
+extern struct file *alloc_file(const struct path *, fmode_t mode,
 	const struct file_operations *fop);
 
 static inline void fput_light(struct file *file, int fput_needed)
