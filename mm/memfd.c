@@ -18,6 +18,7 @@
 #include <linux/hugetlb.h>
 #include <linux/shmem_fs.h>
 #include <linux/memfd.h>
+#include <linux/xarray.h>
 #include <uapi/linux/memfd.h>
 
 /*
