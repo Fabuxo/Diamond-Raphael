@@ -143,7 +143,7 @@ static int page_cache_tree_insert(struct address_space *mapping,
 			*shadowp = p;
 	}
 	__radix_tree_replace(&mapping->i_pages, node, slot, page,
-			     workingset_update_node, mapping);
+			     workingset_lookup_update(mapping));
 	mapping->nrpages++;
 	return 0;
 }
@@ -171,7 +171,7 @@ static void page_cache_tree_delete(struct address_space *mapping,
 
 		radix_tree_clear_tags(&mapping->i_pages, node, slot);
 		__radix_tree_replace(&mapping->i_pages, node, slot, shadow,
-				     workingset_update_node, mapping);
+				     workingset_lookup_update(mapping));
 	}
 
 	if (shadow) {

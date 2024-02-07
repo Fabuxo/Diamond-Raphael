@@ -345,7 +345,7 @@ static int shmem_radix_tree_replace(struct address_space *mapping,
 		return -ENOENT;
 		
 	__radix_tree_replace(&mapping->i_pages, node, pslot,
-			     replacement, NULL, NULL);
+			     replacement, NULL);
 	return 0;
 }
 

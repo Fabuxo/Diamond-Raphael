@@ -475,14 +475,8 @@ out:
 
 static struct list_lru shadow_nodes;
 
-void workingset_update_node(struct radix_tree_node *node, void *private)
+void workingset_update_node(struct radix_tree_node *node)
 {
-	struct address_space *mapping = private;
-
-	/* Only regular page cache has shadow entries */
-	if (dax_mapping(mapping) || shmem_mapping(mapping))
-		return;
-
 	/*
 	 * Track non-empty nodes that contain only shadow entries;
 	 * unlink those that contain pages or are being freed.
@@ -611,15 +605,13 @@ static enum lru_status shadow_lru_isolate(struct list_head *item,
 	inc_lruvec_page_state(virt_to_page(node), WORKINGSET_NODERECLAIM);
 	
 	__radix_tree_delete_node(&mapping->i_pages, node,
-				 workingset_update_node, mapping);
+				 workingset_lookup_update(mapping));
 
 out_invalid:
 	xa_unlock(&mapping->i_pages);
 	ret = LRU_REMOVED_RETRY;
 out:
-	local_irq_enable();
 	cond_resched();
-	local_irq_disable();
 	spin_lock(lru_lock);
 	return ret;
 }

@@ -25,26 +25,31 @@
 #include <linux/rmap.h>
 #include "internal.h"
 
-static void clear_shadow_entry(struct address_space *mapping, pgoff_t index,
-			       void *entry)
+/*
+ * Regular page slots are stabilized by the page lock even without the tree
+ * itself locked.  These unlocked entries need verification under the tree
+ * lock.
+ */
+static inline void __clear_shadow_entry(struct address_space *mapping,
+				pgoff_t index, void *entry)
 {
 	struct radix_tree_node *node;
 	void **slot;
 
-	xa_lock_irq(&mapping->i_pages);
-	/*
-	 * Regular page slots are stabilized by the page lock even
-	 * without the tree itself locked.  These unlocked entries
-	 * need verification under the tree lock.
-	 */
 	if (!__radix_tree_lookup(&mapping->i_pages, index, &node, &slot))
-		goto unlock;
+		return;
 	if (*slot != entry)
-		goto unlock;
+		return;
 	__radix_tree_replace(&mapping->i_pages, node, slot, NULL,
-			     workingset_update_node, mapping);
+			     workingset_update_node);
 	mapping->nrexceptional--;
-unlock:
+}
+
+static void clear_shadow_entry(struct address_space *mapping, pgoff_t index,
+			       void *entry)
+{
+	xa_lock_irq(&mapping->i_pages);
+	__clear_shadow_entry(mapping, index, entry);
 	xa_unlock_irq(&mapping->i_pages);
 }
 

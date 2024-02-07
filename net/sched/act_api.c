@@ -272,9 +272,7 @@ int tcf_idr_create(struct tc_action_net *tn, u32 index, struct nlattr *est,
 {
 	struct tc_action *p = kzalloc(ops->size, GFP_KERNEL);
 	struct tcf_idrinfo *idrinfo = tn->idrinfo;
-	struct idr *idr = &idrinfo->action_idr;
 	int err = -ENOMEM;
-	unsigned long idr_index;
 
 	if (unlikely(!p))
 		return -ENOMEM;
@@ -284,45 +282,14 @@ int tcf_idr_create(struct tc_action_net *tn, u32 index, struct nlattr *est,
 
 	if (cpustats) {
 		p->cpu_bstats = netdev_alloc_pcpu_stats(struct gnet_stats_basic_cpu);
-		if (!p->cpu_bstats) {
-err1:
-			kfree(p);
-			return err;
-		}
-		p->cpu_qstats = alloc_percpu(struct gnet_stats_queue);
-		if (!p->cpu_qstats) {
-err2:
-			free_percpu(p->cpu_bstats);
+		if (!p->cpu_bstats)
 			goto err1;
-		}
+		p->cpu_qstats = alloc_percpu(struct gnet_stats_queue);
+		if (!p->cpu_qstats)
+			goto err2;
 	}
 	spin_lock_init(&p->tcfa_lock);
-	/* user doesn't specify an index */
-	if (!index) {
-		idr_preload(GFP_KERNEL);
-		spin_lock_bh(&idrinfo->lock);
-		err = idr_alloc_ext(idr, NULL, &idr_index, 1, 0,
-				    GFP_ATOMIC);
-		spin_unlock_bh(&idrinfo->lock);
-		idr_preload_end();
-		if (err) {
-err3:
-			free_percpu(p->cpu_qstats);
-			goto err2;
-		}
-		p->tcfa_index = idr_index;
-	} else {
-		idr_preload(GFP_KERNEL);
-		spin_lock_bh(&idrinfo->lock);
-		err = idr_alloc_ext(idr, NULL, NULL, index, index + 1,
-				    GFP_ATOMIC);
-		spin_unlock_bh(&idrinfo->lock);
-		idr_preload_end();
-		if (err)
-			goto err3;
-		p->tcfa_index = index;
-	}
-
+	p->tcfa_index = index;
 	p->tcfa_tm.install = jiffies;
 	p->tcfa_tm.lastuse = jiffies;
 	p->tcfa_tm.firstuse = 0;
@@ -330,16 +297,21 @@ err3:
 		err = gen_new_estimator(&p->tcfa_bstats, p->cpu_bstats,
 					&p->tcfa_rate_est,
 					&p->tcfa_lock, NULL, est);
-		if (err) {
+		if (err)
 			goto err3;
-		}
 	}
 
 	p->idrinfo = idrinfo;
 	p->ops = ops;
-	INIT_LIST_HEAD(&p->list);
 	*a = p;
 	return 0;
+err3:
+	free_percpu(p->cpu_qstats);
+err2:
+	free_percpu(p->cpu_bstats);
+err1:
+	kfree(p);
+	return err;
 }
 EXPORT_SYMBOL(tcf_idr_create);
 
