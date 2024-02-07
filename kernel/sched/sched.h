@@ -2210,6 +2210,11 @@ add_capacity_margin(unsigned long cpu_capacity, int cpu)
 #ifdef CONFIG_SMP
 #ifdef CONFIG_PREEMPT
 
+/*
+ * task_may_not_preempt - check whether a task may not be preemptible soon
+ */
+extern bool task_may_not_preempt(struct task_struct *task, int cpu);
+
 static inline void double_rq_lock(struct rq *rq1, struct rq *rq2);
 
 /*
