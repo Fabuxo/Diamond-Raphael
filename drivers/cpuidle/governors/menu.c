@@ -171,23 +171,10 @@ static inline int which_bucket(unsigned int duration, unsigned long nr_iowaiters
  * to be, the higher this multiplier, and thus the higher
  * the barrier to go to an expensive C state.
  */
-static inline int performance_multiplier(unsigned long nr_iowaiters, unsigned long load)
+static inline int performance_multiplier(unsigned long nr_iowaiters)
 {
-	int mult = 1;
-
-	/* for higher loadavg, we are more reluctant */
-
-	/*
-	 * this doesn't work as intended - it is almost always 0, but can
-	 * sometimes, depending on workload, spike very high into the hundreds
-	 * even when the average cpu load is under 10%.
-	 */
-	/* mult += 2 * get_loadavg(); */
-
-	/* for IO wait tasks (per cpu!) we add 5x each */
-	mult += 10 * nr_iowaiters;
-
-	return mult;
+	/* for IO wait tasks (per cpu!) we add 10x each */
+	return 1 + 10 * nr_iowaiters;
 }
 
 static DEFINE_PER_CPU(struct menu_device, menu_devices);
