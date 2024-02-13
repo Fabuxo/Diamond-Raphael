@@ -11,9 +11,11 @@
 #include <link.h>
 #include <sched.h>
 #include <stdio.h>
+#include <string.h>
 #include <sys/stat.h>
 #include <sys/sysinfo.h>
 #include <sys/types.h>
+#include <sys/utsname.h>
 #include <unistd.h>
 
 #include "utils.h"
@@ -116,4 +118,19 @@ int pick_online_cpu(void)
 done:
 	CPU_FREE(mask);
 	return cpu;
+}
+
+bool is_ppc64le(void)
+{
+	struct utsname uts;
+	int rc;
+
+	errno = 0;
+	rc = uname(&uts);
+	if (rc) {
+		perror("uname");
+		return false;
+	}
+
+	return strcmp(uts.machine, "ppc64le") == 0;
 }
