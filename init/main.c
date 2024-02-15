@@ -589,7 +589,6 @@ asmlinkage __visible void __init start_kernel(void)
 	 * kmem_cache_init()
 	 */
 	setup_log_buf(0);
-	pidhash_init();
 	vfs_caches_init_early();
 	sort_main_extable();
 	trap_init();
@@ -690,18 +689,17 @@ asmlinkage __visible void __init start_kernel(void)
 		initrd_start = 0;
 	}
 #endif
+	kmemleak_init();
 	debug_objects_mem_init();
 	setup_per_cpu_pageset();
 	numa_policy_init();
+	acpi_early_init();
 	if (late_time_init)
 		late_time_init();
+	sched_clock_init();
 	calibrate_delay();
-
-	arch_cpu_finalize_init();
-
-	pidmap_init();
+	pid_idr_init();
 	anon_vma_init();
-	acpi_early_init();
 #ifdef CONFIG_X86
 	if (efi_enabled(EFI_RUNTIME_SERVICES))
 		efi_enter_virtual_mode();
