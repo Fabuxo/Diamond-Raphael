@@ -37,6 +37,12 @@ struct oom_control {
 	 * for display purposes.
 	 */
 	const int order;
+	
+	/*
+	 * Only kill positive adj tasks. Used to behave more like Android's
+	 * lowmemorykiller.
+	 */
+	const bool only_positive_adj;
 
 	/* Used by oom implementation, do not set */
 	unsigned long totalpages;
@@ -100,11 +106,11 @@ static inline vm_fault_t check_stable_address_space(struct mm_struct *mm)
 	return 0;
 }
 
-void __oom_reap_task_mm(struct mm_struct *mm);
+bool __oom_reap_task_mm(struct mm_struct *mm);
 
 extern unsigned long oom_badness(struct task_struct *p,
 		struct mem_cgroup *memcg, const nodemask_t *nodemask,
-		unsigned long totalpages);
+		unsigned long totalpages, bool only_positive_adj);
 
 extern bool out_of_memory(struct oom_control *oc);
 
@@ -121,7 +127,20 @@ extern struct task_struct *find_lock_task_mm(struct task_struct *p);
 extern void dump_tasks(struct mem_cgroup *memcg,
 		const nodemask_t *nodemask);
 
-extern void wake_oom_reaper(struct task_struct *tsk);
+#ifdef CONFIG_HAVE_USERSPACE_LOW_MEMORY_KILLER
+extern bool should_ulmk_retry(gfp_t gfp);
+extern void ulmk_update_last_kill(void);
+extern void ulmk_watchdog_fn(struct timer_list *t);
+extern void ulmk_watchdog_pet(struct timer_list *t);
+#else
+static inline bool should_ulmk_retry(gfp_t gfp)
+{
+	return false;
+}
+static inline void ulmk_update_last_kill(void) {}
+static inline void ulmk_watchdog_fn(struct timer_list *t) {}
+static inline void ulmk_watchdog_pet(struct timer_list *t) {}
+#endif
 
 /* sysctls */
 extern int sysctl_oom_dump_tasks;
@@ -131,4 +150,6 @@ extern int sysctl_reap_mem_on_sigkill;
 
 /* calls for LMK reaper */
 extern void add_to_oom_reaper(struct task_struct *p);
+extern void check_panic_on_foreground_kill(struct task_struct *p);
+#define ULMK_MAGIC "lmkd"
 #endif /* _INCLUDE_LINUX_OOM_H */
