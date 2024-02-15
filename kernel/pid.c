@@ -530,8 +530,14 @@ pid_t __task_pid_nr_ns(struct task_struct *task, enum pid_type type,
 	rcu_read_lock();
 	if (!ns)
 		ns = task_active_pid_ns(current);
-	if (likely(pid_alive(task)))
+	if (likely(pid_alive(task))) {
+		if (type != PIDTYPE_PID) {
+			if (type == __PIDTYPE_TGID)
+				type = PIDTYPE_PID;
+			task = task->group_leader;
+		}
 		nr = pid_nr_ns(rcu_dereference(task->pids[type].pid), ns);
+	}
 	rcu_read_unlock();
 
 	return nr;
@@ -608,6 +614,7 @@ SYSCALL_DEFINE2(pidfd_open, pid_t, pid, unsigned int, flags)
 {
 	int fd, ret;
 	struct pid *p;
+	struct task_struct *tsk;
 
 	if (flags)
 		return -EINVAL;
@@ -621,7 +628,9 @@ SYSCALL_DEFINE2(pidfd_open, pid_t, pid, unsigned int, flags)
 
 	ret = 0;
 	rcu_read_lock();
-	if (!pid_task(p, PIDTYPE_TGID))
+	tsk = pid_task(p, PIDTYPE_PID);
+	/* Check that pid belongs to a group leader task */
+	if (!tsk || !thread_group_leader(tsk))
 		ret = -EINVAL;
 	rcu_read_unlock();
 

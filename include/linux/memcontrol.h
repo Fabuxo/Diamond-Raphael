@@ -202,11 +202,6 @@ struct mem_cgroup {
 	 * Should the accounting and control be hierarchical, per subtree?
 	 */
 	bool use_hierarchy;
-	
-	/*
-	 * Should the OOM killer kill all belonging tasks, had it kill one?
-	 */
-	bool oom_group;
 
 	/* protected by memcg_oom_lock */
 	bool		oom_lock;
@@ -493,7 +488,7 @@ unsigned long mem_cgroup_get_zone_lru_size(struct lruvec *lruvec,
 
 void mem_cgroup_handle_over_high(void);
 
-unsigned long mem_cgroup_get_max(struct mem_cgroup *memcg);
+unsigned long mem_cgroup_get_limit(struct mem_cgroup *memcg);
 
 void mem_cgroup_print_oom_info(struct mem_cgroup *memcg,
 				struct task_struct *p);
@@ -516,9 +511,6 @@ static inline bool task_in_memcg_oom(struct task_struct *p)
 }
 
 bool mem_cgroup_oom_synchronize(bool wait);
-struct mem_cgroup *mem_cgroup_get_oom_group(struct task_struct *victim,
-					    struct mem_cgroup *oom_domain);
-void mem_cgroup_print_oom_group(struct mem_cgroup *memcg);
 
 #ifdef CONFIG_MEMCG_SWAP
 extern int do_swap_account;
@@ -933,7 +925,7 @@ mem_cgroup_node_nr_lru_pages(struct mem_cgroup *memcg,
 	return 0;
 }
 
-static inline unsigned long mem_cgroup_get_max(struct mem_cgroup *memcg)
+static inline unsigned long mem_cgroup_get_limit(struct mem_cgroup *memcg)
 {
 	return 0;
 }
@@ -988,16 +980,6 @@ static inline bool task_in_memcg_oom(struct task_struct *p)
 static inline bool mem_cgroup_oom_synchronize(bool wait)
 {
 	return false;
-}
-
-static inline struct mem_cgroup *mem_cgroup_get_oom_group(
-	struct task_struct *victim, struct mem_cgroup *oom_domain)
-{
-	return NULL;
-}
-
-static inline void mem_cgroup_print_oom_group(struct mem_cgroup *memcg)
-{
 }
 
 static inline unsigned long memcg_page_state(struct mem_cgroup *memcg,

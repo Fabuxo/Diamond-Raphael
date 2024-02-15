@@ -1205,13 +1205,13 @@ __setup("print-fatal-signals=", setup_print_fatal_signals);
 int
 __group_send_sig_info(int sig, struct siginfo *info, struct task_struct *p)
 {
-	return send_signal(sig, info, p, PIDTYPE_TGID);
+	return send_signal(sig, info, p, 1);
 }
 
 static int
 specific_send_sig_info(int sig, struct siginfo *info, struct task_struct *t)
 {
-	return send_signal(sig, info, t, PIDTYPE_PID);
+	return send_signal(sig, info, t, 0);
 }
 
 int do_send_sig_info(int sig, struct siginfo *info, struct task_struct *p,
@@ -1328,8 +1328,7 @@ struct sighand_struct *__lock_task_sighand(struct task_struct *tsk,
 /*
  * send signal info to all the members of a group
  */
-int group_send_sig_info(int sig, struct siginfo *info, struct task_struct *p,
-			enum pid_type type)
+int group_send_sig_info(int sig, struct siginfo *info, struct task_struct *p)
 {
 	int ret;
 
@@ -1338,13 +1337,9 @@ int group_send_sig_info(int sig, struct siginfo *info, struct task_struct *p,
 	rcu_read_unlock();
 
 	if (!ret && sig) {
-		check_panic_on_foreground_kill(p);
-		ret = do_send_sig_info(sig, info, p, type);
-		if (capable(CAP_KILL) && sig == SIGKILL) {
-			if (!strcmp(current->comm, ULMK_MAGIC))
-				add_to_oom_reaper(p);
-			ulmk_update_last_kill();
-		}
+		ret = do_send_sig_info(sig, info, p, true);
+		if (capable(CAP_KILL) && sig == SIGKILL)
+			add_to_oom_reaper(p);
 	}
 
 	return ret;
@@ -1363,7 +1358,7 @@ int __kill_pgrp_info(int sig, struct siginfo *info, struct pid *pgrp)
 	success = 0;
 	retval = -ESRCH;
 	do_each_pid_task(pgrp, PIDTYPE_PGID, p) {
-		int err = group_send_sig_info(sig, info, p, PIDTYPE_PGID);
+		int err = group_send_sig_info(sig, info, p);
 		success |= !err;
 		retval = err;
 	} while_each_pid_task(pgrp, PIDTYPE_PGID, p);
@@ -1379,7 +1374,7 @@ int kill_pid_info(int sig, struct siginfo *info, struct pid *pid)
 		rcu_read_lock();
 		p = pid_task(pid, PIDTYPE_PID);
 		if (p)
-			error = group_send_sig_info(sig, info, p, PIDTYPE_TGID);
+			error = group_send_sig_info(sig, info, p);
 		rcu_read_unlock();
 		if (likely(!p || error != -ESRCH))
 			return error;
@@ -1482,8 +1477,7 @@ static int kill_something_info(int sig, struct siginfo *info, pid_t pid)
 		for_each_process(p) {
 			if (task_pid_vnr(p) > 1 &&
 					!same_thread_group(p, current)) {
-				int err = group_send_sig_info(sig, info, p,
-							      PIDTYPE_MAX);
+				int err = group_send_sig_info(sig, info, p);
 				++count;
 				if (err != -EPERM)
 					retval = err;
@@ -1753,7 +1747,7 @@ bool do_notify_parent(struct task_struct *tsk, int sig)
 			sig = 0;
 	}
 	if (valid_signal(sig) && sig)
-		__send_signal(sig, &info, tsk->parent, PIDTYPE_TGID, false);
+		__group_send_sig_info(sig, &info, tsk->parent);
 	__wake_up_parent(tsk, tsk->parent);
 	spin_unlock_irqrestore(&psig->siglock, flags);
 
