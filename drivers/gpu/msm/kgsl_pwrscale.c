@@ -1,7 +1,14 @@
-// SPDX-License-Identifier: GPL-2.0-only
-/*
- * Copyright (c) 2010-2019, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+/* Copyright (c) 2010-2019, The Linux Foundation. All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 and
+ * only version 2 as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
  */
 
 #include <linux/export.h>
@@ -9,8 +16,6 @@
 #include <linux/hrtimer.h>
 #include <linux/devfreq_cooling.h>
 #include <linux/pm_opp.h>
-#include <linux/slab.h>
-#include <linux/msm_kgsl.h>
 
 #include "kgsl.h"
 #include "kgsl_pwrscale.h"
@@ -636,20 +641,12 @@ static int opp_notify(struct notifier_block *nb,
 			min_level = level;
 	}
 
+	pwr->thermal_pwrlevel = max_level;
 	pwr->thermal_pwrlevel_floor = min_level;
 
+	/* Update the current level using the new limit */
+	kgsl_pwrctrl_pwrlevel_change(device, pwr->active_pwrlevel);
 	mutex_unlock(&device->mutex);
-
-	if (kgsl_pwr_limits_set_freq(pwr->cooling_pwr_limit,
-			pwr->pwrlevels[max_level].gpu_freq)) {
-		dev_err(device->dev,
-				"Failed to set cooling thermal limit via limits fw\n");
-		mutex_lock(&device->mutex);
-		pwr->thermal_pwrlevel = max_level;
-		/* Update the current level using the new limit */
-		kgsl_pwrctrl_pwrlevel_change(device, pwr->active_pwrlevel);
-		mutex_unlock(&device->mutex);
-	}
 
 	return 0;
 }
