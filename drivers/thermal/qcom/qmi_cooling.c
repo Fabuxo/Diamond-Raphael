@@ -1,14 +1,7 @@
-/* Copyright (c) 2017-2020, The Linux Foundation. All rights reserved.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 and
- * only version 2 as published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
+// SPDX-License-Identifier: GPL-2.0-only
+/*
+ * Copyright (c) 2017-2020, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #define pr_fmt(fmt) "%s:%s " fmt, KBUILD_MODNAME, __func__
@@ -134,7 +127,7 @@ static struct qmi_dev_info device_clients[] = {
 		.type = QMI_CDEV_MAX_LIMIT_TYPE,
 	},
 	{
-		.dev_name = "modem_v2x",
+		.dev_name = "wlan",
 		.type = QMI_CDEV_MAX_LIMIT_TYPE,
 	},
 	{
@@ -278,11 +271,11 @@ static int qmi_set_cur_state(struct thermal_cooling_device *cdev,
 	if (!qmi_cdev)
 		return -EINVAL;
 
+	if (state > qmi_cdev->max_level)
+		return -EINVAL;
+
 	if (qmi_cdev->type == QMI_CDEV_MIN_LIMIT_TYPE)
 		return 0;
-
-	if (state > qmi_cdev->max_level)
-		state = qmi_cdev->max_level;
 
 	return qmi_set_cur_or_min_state(qmi_cdev, state);
 }
@@ -295,11 +288,11 @@ static int qmi_set_min_state(struct thermal_cooling_device *cdev,
 	if (!qmi_cdev)
 		return -EINVAL;
 
+	if (state > qmi_cdev->max_level)
+		return -EINVAL;
+
 	if (qmi_cdev->type == QMI_CDEV_MAX_LIMIT_TYPE)
 		return 0;
-
-	if (state > qmi_cdev->max_level)
-		state = qmi_cdev->max_level;
 
 	/* Convert state into QMI client expects for min state */
 	state = qmi_cdev->max_level - state;
@@ -439,7 +432,6 @@ static void qmi_tmd_svc_arrive(struct work_struct *work)
 						svc_arrive_work);
 
 	verify_devices_and_register(tmd);
-	return;
 }
 
 static void thermal_qmi_net_reset(struct qmi_handle *qmi)
@@ -660,7 +652,6 @@ static struct platform_driver qmi_device_driver = {
 	.remove         = qmi_device_remove,
 	.driver         = {
 		.name   = QMI_CDEV_DRIVER,
-		.owner  = THIS_MODULE,
 		.of_match_table = qmi_device_match,
 	},
 };

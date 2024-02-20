@@ -1,15 +1,6 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2012-2020, The Linux Foundation. All rights reserved.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 and
- * only version 2 as published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
  */
 
 #include <linux/module.h>
@@ -90,16 +81,9 @@ static struct adc_tm_reverse_scale_fn adc_tm_rscale_fn[] = {
 static int adc_tm5_get_temp(struct adc_tm_sensor *sensor, int *temp)
 {
 	int ret, milli_celsius;
-	int emul_temp;
 
 	if (!sensor || !sensor->adc)
 		return -EINVAL;
-
-	emul_temp = sensor->emul_temperature;
-	if (emul_temp) {
-		*temp = emul_temp;
-		return 0;
-	}
 
 	ret = iio_read_channel_processed(sensor->adc, &milli_celsius);
 	if (ret < 0)
@@ -107,12 +91,6 @@ static int adc_tm5_get_temp(struct adc_tm_sensor *sensor, int *temp)
 
 	*temp = milli_celsius;
 
-	return 0;
-}
-
-static int adc_tm5_set_emul_temp(struct adc_tm_sensor *sensor, int emul_temp)
-{
-	sensor->emul_temperature = emul_temp;
 	return 0;
 }
 
@@ -310,16 +288,16 @@ static int32_t adc_tm5_thr_update(struct adc_tm_sensor *sensor,
 	uint16_t reg_low_thr_lsb, reg_high_thr_lsb;
 	uint32_t scale_type = 0, mask = 0, btm_chan_idx = 0;
 	struct adc_tm_config tm_config;
-	struct adc_tm_chip *chip;
+	struct adc_tm_chip *chip = NULL;
 
-	chip = sensor->chip;
-
-	ret = adc_tm5_get_btm_idx(sensor->chip,
+	ret = adc_tm5_get_btm_idx(chip,
 		sensor->btm_ch, &btm_chan_idx);
 	if (ret < 0) {
 		pr_err("Invalid btm channel idx\n");
 		return ret;
 	}
+
+	chip = sensor->chip;
 
 	tm_config.high_thr_voltage = (int64_t)high_thr;
 	tm_config.low_thr_voltage = (int64_t)low_thr;
@@ -443,16 +421,14 @@ static int32_t adc_tm5_manage_thresholds(struct adc_tm_sensor *sensor)
 	return 0;
 }
 
-void notify_adc_tm_fn(struct work_struct *work)
+/* Used to notify non-thermal clients of threshold crossing */
+void notify_adc_tm5_fn(struct adc_tm_sensor *adc_tm)
 {
 	struct adc_tm_client_info *client_info = NULL;
 	struct adc_tm_chip *chip;
 	struct list_head *thr_list;
 	uint32_t btm_chan_num = 0, btm_chan_idx = 0;
 	int ret = 0;
-
-	struct adc_tm_sensor *adc_tm = container_of(work,
-		struct adc_tm_sensor, work);
 
 	chip = adc_tm->chip;
 
@@ -535,7 +511,8 @@ void notify_adc_tm_fn(struct work_struct *work)
 	}
 }
 
-int32_t adc_tm5_channel_measure(struct adc_tm_chip *chip,
+/* Used by non-thermal clients to configure an ADC_TM channel */
+static int32_t adc_tm_5_channel_measure(struct adc_tm_chip *chip,
 					struct adc_tm_param *param)
 
 {
@@ -588,9 +565,9 @@ int32_t adc_tm5_channel_measure(struct adc_tm_chip *chip,
 	/* enable low/high irqs */
 	list_for_each_entry(client_info,
 			&chip->sensor[dt_index].thr_list, list) {
-		if (client_info->high_thr_set == true)
+		if (client_info->high_thr_set)
 			high_thr_set = true;
-		if (client_info->low_thr_set == true)
+		if (client_info->low_thr_set)
 			low_thr_set = true;
 	}
 
@@ -637,9 +614,9 @@ fail_unlock:
 	mutex_unlock(&chip->adc_mutex_lock);
 	return ret;
 }
-EXPORT_SYMBOL(adc_tm5_channel_measure);
 
-int32_t adc_tm5_disable_chan_meas(struct adc_tm_chip *chip,
+/* Used by non-thermal clients to release an ADC_TM channel */
+static int32_t adc_tm_5_disable_chan_meas(struct adc_tm_chip *chip,
 					struct adc_tm_param *param)
 {
 	int ret = 0, i = 0;
@@ -697,7 +674,6 @@ fail:
 	spin_unlock_irqrestore(&chip->adc_tm_lock, flags);
 	return ret;
 }
-EXPORT_SYMBOL(adc_tm5_disable_chan_meas);
 
 static int adc_tm5_set_mode(struct adc_tm_sensor *sensor,
 			      enum thermal_device_mode mode)
@@ -786,7 +762,6 @@ static int adc_tm5_set_trip_temp(struct adc_tm_sensor *sensor,
 	int ret;
 	uint32_t btm_chan = 0, btm_chan_idx = 0, mask = 0;
 	unsigned long flags;
-	int emul_temp;
 
 	if (!sensor)
 		return -EINVAL;
@@ -805,13 +780,6 @@ static int adc_tm5_set_trip_temp(struct adc_tm_sensor *sensor,
 	if ((high_temp == INT_MAX) && (low_temp == INT_MIN)) {
 		pr_err("No trips to set\n");
 		return -EINVAL;
-	}
-
-	/* Set threshold to extremely value while emul temp set */
-	emul_temp = sensor->emul_temperature;
-	if (emul_temp) {
-		high_temp = INT_MAX;
-		low_temp = INT_MIN;
 	}
 
 	pr_debug("requested a low temp- %d and high temp- %d\n",
@@ -957,13 +925,6 @@ static irqreturn_t adc_tm5_handler(int irq, void *data)
 				pr_err("adc_tm data_high read failed with %d\n",
 							ret);
 			code = ((data_high << ADC_TM_DATA_SHIFT) | data_low);
-			/* skip it since voltage reading is zero */
-			if (!code) {
-				pr_err("Sensor:%s voltage is zero\n",
-						chip->sensor[i].tzd->type);
-				i++;
-				continue;
-			}
 		}
 
 		spin_lock_irqsave(&chip->adc_tm_lock, flags);
@@ -1078,13 +1039,13 @@ static int adc_tm5_init(struct adc_tm_chip *chip, uint32_t dt_chans)
 	u8 buf[4], channels_available, meas_int_timer_2_3 = 0;
 	int ret;
 	int dig_param_len = 4;
-	int pmic_subtype_660 = 0;
+	bool pmic_subtype_660 = false;
 	unsigned int offset_btm_idx = 0, i;
 
 	if ((chip->pmic_rev_id) &&
 		(chip->pmic_rev_id->pmic_subtype == PM660_SUBTYPE)) {
 		dig_param_len = 2;
-		pmic_subtype_660 = 1;
+		pmic_subtype_660 = true;
 	} else {
 		ret = adc_tm5_read_reg(chip, ADC_TM_NUM_BTM,
 					&channels_available, 1);
@@ -1167,7 +1128,9 @@ static const struct adc_tm_ops ops_adc_tm5 = {
 	.set_trips	= adc_tm5_set_trip_temp,
 	.interrupts_reg = adc_tm5_register_interrupts,
 	.get_temp	= adc_tm5_get_temp,
-	.set_emul_temp	= adc_tm5_set_emul_temp,
+	.channel_measure = adc_tm_5_channel_measure,
+	.disable_chan = adc_tm_5_disable_chan_meas,
+	.notify = notify_adc_tm5_fn,
 };
 
 const struct adc_tm_data data_adc_tm5 = {

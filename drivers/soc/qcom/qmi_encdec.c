@@ -326,9 +326,9 @@ static int qmi_encode(struct qmi_elem_info *ei_array, void *out_buf,
 		buf_src = in_c_struct + temp_ei->offset;
 		tlv_type = temp_ei->tlv_type;
 
-		if (temp_ei->is_array == NO_ARRAY) {
+		if (temp_ei->array_type == NO_ARRAY) {
 			data_len_value = 1;
-		} else if (temp_ei->is_array == STATIC_ARRAY) {
+		} else if (temp_ei->array_type == STATIC_ARRAY) {
 			data_len_value = temp_ei->elem_len;
 		} else if (data_len_value <= 0 ||
 			    temp_ei->elem_len < data_len_value) {
@@ -658,9 +658,9 @@ static int qmi_decode(struct qmi_elem_info *ei_array, void *out_c_struct,
 			UPDATE_DECODE_VARIABLES(buf_src, decoded_bytes, rc);
 		}
 
-		if (temp_ei->is_array == NO_ARRAY) {
+		if (temp_ei->array_type == NO_ARRAY) {
 			data_len_value = 1;
-		} else if (temp_ei->is_array == STATIC_ARRAY) {
+		} else if (temp_ei->array_type == STATIC_ARRAY) {
 			data_len_value = temp_ei->elem_len;
 		} else if (data_len_value > temp_ei->elem_len) {
 			pr_err("%s: Data len %d > max spec %d\n",
@@ -794,7 +794,7 @@ struct qmi_elem_info qmi_response_type_v01_ei[] = {
 		.data_type	= QMI_SIGNED_2_BYTE_ENUM,
 		.elem_len	= 1,
 		.elem_size	= sizeof(u16),
-		.is_array	= NO_ARRAY,
+		.array_type	= NO_ARRAY,
 		.tlv_type	= QMI_COMMON_TLV_TYPE,
 		.offset		= offsetof(struct qmi_response_type_v01,
 					   result),
@@ -804,7 +804,7 @@ struct qmi_elem_info qmi_response_type_v01_ei[] = {
 		.data_type      = QMI_SIGNED_2_BYTE_ENUM,
 		.elem_len       = 1,
 		.elem_size      = sizeof(u16),
-		.is_array       = NO_ARRAY,
+		.array_type       = NO_ARRAY,
 		.tlv_type       = QMI_COMMON_TLV_TYPE,
 		.offset         = offsetof(struct qmi_response_type_v01,
 					   error),
@@ -814,7 +814,7 @@ struct qmi_elem_info qmi_response_type_v01_ei[] = {
 		.data_type	= QMI_EOTI,
 		.elem_len	= 0,
 		.elem_size	= 0,
-		.is_array	= NO_ARRAY,
+		.array_type	= NO_ARRAY,
 		.tlv_type	= QMI_COMMON_TLV_TYPE,
 		.offset		= 0,
 		.ei_array	= NULL,
