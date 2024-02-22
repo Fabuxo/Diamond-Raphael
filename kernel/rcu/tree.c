@@ -81,45 +81,31 @@
 /* Data structures. */
 
 /*
- * In order to export the rcu_state name to the tracing tools, it
- * needs to be added in the __tracepoint_string section.
- * This requires defining a separate variable tp_<sname>_varname
- * that points to the string being used, and this will allow
- * the tracing userspace tools to be able to decipher the string
- * address to the matching string.
+ * Steal a bit from the bottom of ->dynticks for idle entry/exit
+ * control.  Initially this is for TLB flushing.
  */
-#ifdef CONFIG_TRACING
-# define DEFINE_RCU_TPS(sname) \
-static char sname##_varname[] = #sname; \
-static const char *tp_##sname##_varname __used __tracepoint_string = sname##_varname;
-# define RCU_STATE_NAME(sname) sname##_varname
-#else
-# define DEFINE_RCU_TPS(sname)
-# define RCU_STATE_NAME(sname) __stringify(sname)
+#define RCU_DYNTICK_CTRL_MASK 0x1
+#define RCU_DYNTICK_CTRL_CTR  (RCU_DYNTICK_CTRL_MASK + 1)
+#ifndef rcu_eqs_special_exit
+#define rcu_eqs_special_exit() do { } while (0)
 #endif
 
-#define RCU_STATE_INITIALIZER(sname, sabbr, cr) \
-DEFINE_RCU_TPS(sname) \
-static DEFINE_PER_CPU_SHARED_ALIGNED(struct rcu_data, sname##_data); \
-struct rcu_state sname##_state = { \
-	.level = { &sname##_state.node[0] }, \
-	.rda = &sname##_data, \
-	.call = cr, \
-	.gp_state = RCU_GP_IDLE, \
-	.gp_seq = (0UL - 300UL) << RCU_SEQ_CTR_SHIFT, \
-	.barrier_mutex = __MUTEX_INITIALIZER(sname##_state.barrier_mutex), \
-	.name = RCU_STATE_NAME(sname), \
-	.abbr = sabbr, \
-	.exp_mutex = __MUTEX_INITIALIZER(sname##_state.exp_mutex), \
-	.exp_wake_mutex = __MUTEX_INITIALIZER(sname##_state.exp_wake_mutex), \
-	.ofl_lock = __SPIN_LOCK_UNLOCKED(sname##_state.ofl_lock), \
-}
-
-RCU_STATE_INITIALIZER(rcu_sched, 's', call_rcu_sched);
-RCU_STATE_INITIALIZER(rcu_bh, 'b', call_rcu_bh);
-
-static struct rcu_state *const rcu_state_p;
-LIST_HEAD(rcu_struct_flavors);
+static DEFINE_PER_CPU_SHARED_ALIGNED(struct rcu_data, rcu_data) = {
+	.dynticks_nesting = 1,
+	.dynticks_nmi_nesting = DYNTICK_IRQ_NONIDLE,
+	.dynticks = ATOMIC_INIT(RCU_DYNTICK_CTRL_CTR),
+};
+struct rcu_state rcu_state = {
+	.level = { &rcu_state.node[0] },
+	.gp_state = RCU_GP_IDLE,
+	.gp_seq = (0UL - 300UL) << RCU_SEQ_CTR_SHIFT,
+	.barrier_mutex = __MUTEX_INITIALIZER(rcu_state.barrier_mutex),
+	.name = RCU_NAME,
+	.abbr = RCU_ABBR,
+	.exp_mutex = __MUTEX_INITIALIZER(rcu_state.exp_mutex),
+	.exp_wake_mutex = __MUTEX_INITIALIZER(rcu_state.exp_wake_mutex),
+	.ofl_lock = __RAW_SPIN_LOCK_UNLOCKED(rcu_state.ofl_lock),
+};
 
 /* Dump rcu_node combining tree at boot to verify correct setup. */
 static bool dump_tree;
@@ -188,17 +174,6 @@ static int gp_init_delay;
 module_param(gp_init_delay, int, 0444);
 static int gp_cleanup_delay;
 module_param(gp_cleanup_delay, int, 0444);
-
-// A page shrinker can ask for pages to be freed to make them
-// available for other parts of the system. This usually happens
-// under low memory conditions, and in that case we should also
-// defer page-cache filling for a short time period.
-//
-// The default value is 5 seconds, which is long enough to reduce
-// interference with the shrinker while it asks other systems to
-// drain their caches.
-static int rcu_delay_page_cache_fill_msec = 5000;
-module_param(rcu_delay_page_cache_fill_msec, int, 0444);
 
 /* Retrieve RCU kthreads priority for rcutorture */
 int rcu_get_gp_kthreads_prio(void)
@@ -539,7 +514,7 @@ static int rcu_pending(void);
  */
 unsigned long rcu_get_gp_seq(void)
 {
-	return READ_ONCE(rcu_state_p->gp_seq);
+	return READ_ONCE(rcu_state.gp_seq);
 }
 EXPORT_SYMBOL_GPL(rcu_get_gp_seq);
 
@@ -551,18 +526,9 @@ EXPORT_SYMBOL_GPL(rcu_get_gp_seq);
  */
 unsigned long rcu_exp_batches_completed(void)
 {
-	return rcu_state_p->expedited_sequence;
+	return rcu_state.expedited_sequence;
 }
 EXPORT_SYMBOL_GPL(rcu_exp_batches_completed);
-
-/*
- * Force a quiescent state.
- */
-void rcu_force_quiescent_state(void)
-{
-	force_quiescent_state(rcu_state_p);
-}
-EXPORT_SYMBOL_GPL(rcu_force_quiescent_state);
 
 /*
  * Return the root node of the rcu_state structure.
@@ -588,25 +554,14 @@ static const char *gp_state_getname(short gs)
 void rcutorture_get_gp_data(enum rcutorture_type test_type, int *flags,
 			    unsigned long *gp_seq)
 {
-	struct rcu_state *rsp = NULL;
-
 	switch (test_type) {
 	case RCU_FLAVOR:
-		rsp = rcu_state_p;
-		break;
-	case RCU_BH_FLAVOR:
-		rsp = &rcu_bh_state;
-		break;
-	case RCU_SCHED_FLAVOR:
-		rsp = &rcu_sched_state;
+		*flags = READ_ONCE(rcu_state.gp_flags);
+		*gp_seq = rcu_seq_current(&rcu_state.gp_seq);
 		break;
 	default:
 		break;
 	}
-	if (rsp == NULL)
-		return;
-	*flags = READ_ONCE(rsp->gp_flags);
-	*gp_seq = rcu_seq_current(&rsp->gp_seq);
 }
 EXPORT_SYMBOL_GPL(rcutorture_get_gp_data);
 
@@ -1970,8 +1925,7 @@ static void rcu_report_qs_rnp(unsigned long mask, struct rcu_node *rnp,
  * disabled.
  */
 static void __maybe_unused
-rcu_report_unblock_qs_rnp(struct rcu_state *rsp,
-			  struct rcu_node *rnp, unsigned long flags)
+rcu_report_unblock_qs_rnp(struct rcu_node *rnp, unsigned long flags)
 	__releases(rnp->lock)
 {
 	unsigned long gps;
@@ -1979,8 +1933,7 @@ rcu_report_unblock_qs_rnp(struct rcu_state *rsp,
 	struct rcu_node *rnp_p;
 
 	raw_lockdep_assert_held_rcu_node(rnp);
-	if (WARN_ON_ONCE(rcu_state_p == &rcu_sched_state) ||
-	    WARN_ON_ONCE(rsp != rcu_state_p) ||
+	if (WARN_ON_ONCE(!IS_ENABLED(CONFIG_PREEMPT)) ||
 	    WARN_ON_ONCE(rcu_preempt_blocked_readers_cgp(rnp)) ||
 	    rnp->qsmask != 0) {
 		raw_spin_unlock_irqrestore_rcu_node(rnp, flags);
@@ -1994,7 +1947,7 @@ rcu_report_unblock_qs_rnp(struct rcu_state *rsp,
 		 * Only one rcu_node structure in the tree, so don't
 		 * try to report up to its nonexistent parent!
 		 */
-		rcu_report_qs_rsp(rsp, flags);
+		rcu_report_qs_rsp(flags);
 		return;
 	}
 
@@ -2003,7 +1956,7 @@ rcu_report_unblock_qs_rnp(struct rcu_state *rsp,
 	mask = rnp->grpmask;
 	raw_spin_unlock_rcu_node(rnp);	/* irqs remain disabled. */
 	raw_spin_lock_rcu_node(rnp_p);	/* irqs already disabled. */
-	rcu_report_qs_rnp(mask, rsp, rnp_p, gps, flags);
+	rcu_report_qs_rnp(mask, rnp_p, gps, flags);
 }
 
 /*
@@ -2322,20 +2275,19 @@ void rcu_sched_clock_irq(int user)
  * Otherwise, invoke the specified function to check dyntick state for
  * each CPU that has not yet reported a quiescent state.
  */
-static void force_qs_rnp(struct rcu_state *rsp, int (*f)(struct rcu_data *rsp))
+static void force_qs_rnp(int (*f)(struct rcu_data *rdp))
 {
 	int cpu;
 	unsigned long flags;
 	unsigned long mask;
 	struct rcu_node *rnp;
 
-	rcu_for_each_leaf_node(rsp, rnp) {
+	rcu_for_each_leaf_node(rnp) {
 		cond_resched_tasks_rcu_qs();
 		mask = 0;
 		raw_spin_lock_irqsave_rcu_node(rnp, flags);
 		if (rnp->qsmask == 0) {
-			if (rcu_state_p == &rcu_sched_state ||
-			    rsp != rcu_state_p ||
+			if (!IS_ENABLED(CONFIG_PREEMPT) ||
 			    rcu_preempt_blocked_readers_cgp(rnp)) {
 				/*
 				 * No point in scanning bits because they
@@ -2352,19 +2304,57 @@ static void force_qs_rnp(struct rcu_state *rsp, int (*f)(struct rcu_data *rsp))
 		for_each_leaf_node_possible_cpu(rnp, cpu) {
 			unsigned long bit = leaf_node_cpu_bit(rnp, cpu);
 			if ((rnp->qsmask & bit) != 0) {
-				if (f(per_cpu_ptr(rsp->rda, cpu)))
+				if (f(per_cpu_ptr(&rcu_data, cpu)))
 					mask |= bit;
 			}
 		}
 		if (mask != 0) {
 			/* Idle/offline CPUs, report (releases rnp->lock). */
-			rcu_report_qs_rnp(mask, rsp, rnp, rnp->gp_seq, flags);
+			rcu_report_qs_rnp(mask, rnp, rnp->gp_seq, flags);
 		} else {
 			/* Nothing to do here, so just drop the lock. */
 			raw_spin_unlock_irqrestore_rcu_node(rnp, flags);
 		}
 	}
 }
+
+/*
+ * Force quiescent states on reluctant CPUs, and also detect which
+ * CPUs are in dyntick-idle mode.
+ */
+void rcu_force_quiescent_state(void)
+{
+	unsigned long flags;
+	bool ret;
+	struct rcu_node *rnp;
+	struct rcu_node *rnp_old = NULL;
+
+	/* Funnel through hierarchy to reduce memory contention. */
+	rnp = __this_cpu_read(rcu_data.mynode);
+	for (; rnp != NULL; rnp = rnp->parent) {
+		ret = (READ_ONCE(rcu_state.gp_flags) & RCU_GP_FLAG_FQS) ||
+		      !raw_spin_trylock(&rnp->fqslock);
+		if (rnp_old != NULL)
+			raw_spin_unlock(&rnp_old->fqslock);
+		if (ret)
+			return;
+		rnp_old = rnp;
+	}
+	/* rnp_old == rcu_get_root(), rnp == NULL. */
+
+	/* Reached the root of the rcu_node tree, acquire lock. */
+	raw_spin_lock_irqsave_rcu_node(rnp_old, flags);
+	raw_spin_unlock(&rnp_old->fqslock);
+	if (READ_ONCE(rcu_state.gp_flags) & RCU_GP_FLAG_FQS) {
+		raw_spin_unlock_irqrestore_rcu_node(rnp_old, flags);
+		return;  /* Someone beat us to it. */
+	}
+	WRITE_ONCE(rcu_state.gp_flags,
+		   READ_ONCE(rcu_state.gp_flags) | RCU_GP_FLAG_FQS);
+	raw_spin_unlock_irqrestore_rcu_node(rnp_old, flags);
+	rcu_gp_kthread_wake();
+}
+EXPORT_SYMBOL_GPL(rcu_force_quiescent_state);
 
 /* Perform RCU core processing work for the current CPU.  */
 static __latent_entropy void rcu_core(void)
@@ -2689,10 +2679,9 @@ EXPORT_SYMBOL_GPL(call_rcu);
  * callbacks in the list of pending callbacks. Until then, this
  * function may only be called from __kfree_rcu().
  */
-void kfree_call_rcu(struct rcu_head *head,
-		    rcu_callback_t func)
+void kfree_call_rcu(struct rcu_head *head, rcu_callback_t func)
 {
-	__call_rcu(head, func, rcu_state_p, -1, 1);
+	__call_rcu(head, func, 1);
 }
 EXPORT_SYMBOL_GPL(kfree_call_rcu);
 
@@ -2783,7 +2772,7 @@ unsigned long get_state_synchronize_rcu(void)
 	 * before the load from ->gp_seq.
 	 */
 	smp_mb();  /* ^^^ */
-	return rcu_seq_snap(&rcu_state_p->gp_seq);
+	return rcu_seq_snap(&rcu_state.gp_seq);
 }
 EXPORT_SYMBOL_GPL(get_state_synchronize_rcu);
 
@@ -2803,7 +2792,7 @@ EXPORT_SYMBOL_GPL(get_state_synchronize_rcu);
  */
 void cond_synchronize_rcu(unsigned long oldstate)
 {
-	if (!rcu_seq_done(&rcu_state_p->gp_seq, oldstate))
+	if (!rcu_seq_done(&rcu_state.gp_seq, oldstate))
 		synchronize_rcu();
 	else
 		smp_mb(); /* Ensure GP ends before subsequent accesses. */
@@ -3090,7 +3079,7 @@ int rcutree_prepare_cpu(unsigned int cpu)
  */
 static void rcutree_affinity_setting(unsigned int cpu, int outgoing)
 {
-	struct rcu_data *rdp = per_cpu_ptr(rcu_state_p->rda, cpu);
+	struct rcu_data *rdp = per_cpu_ptr(&rcu_data, cpu);
 
 	rcu_boost_kthread_setaffinity(rdp->mynode, outgoing);
 }
