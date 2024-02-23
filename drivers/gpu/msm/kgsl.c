@@ -5217,8 +5217,7 @@ static long kgsl_run_one_worker_perf(struct kthread_worker *worker,
 		struct task_struct **thread, const char *name)
 {
 	kthread_init_worker(worker);
-	*thread = kthread_run_perf_critical(cpu_perf_mask,
-		kthread_worker_fn, worker, name);
+	*thread = kthread_run(kthread_worker_fn, worker, name);
 	if (IS_ERR(*thread)) {
 		pr_err("unable to start %s\n", name);
 		return PTR_ERR(thread);
@@ -5230,7 +5229,7 @@ static long kgsl_run_one_worker_perf(struct kthread_worker *worker,
 static int __init kgsl_core_init(void)
 {
 	int result = 0;
-	struct sched_param param = { .sched_priority = 16 };
+	struct sched_param param = { .sched_priority = 2 };
 
 	place_marker("M - DRIVER KGSL Init");
 

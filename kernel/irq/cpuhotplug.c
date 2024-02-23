@@ -205,16 +205,12 @@ void irq_migrate_all_off_this_cpu(void)
 		raw_spin_lock(&desc->lock);
 		affinity_broken = migrate_one_irq(desc);
 		raw_spin_unlock(&desc->lock);
-#ifdef CONFIG_DEBUG_KERNEL
+		
 		if (affinity_broken) {
 			pr_info_ratelimited("IRQ %u: no longer affine to CPU%u\n",
 					    irq, smp_processor_id());
 		}
-#endif
 	}
-
-	if (!cpumask_test_cpu(smp_processor_id(), cpu_lp_mask))
-		reaffine_perf_irqs(true);
 }
 
 static void irq_restore_affinity_of_irq(struct irq_desc *desc, unsigned int cpu)
@@ -260,9 +256,6 @@ int irq_affinity_online_cpu(unsigned int cpu)
 		raw_spin_unlock_irq(&desc->lock);
 	}
 	irq_unlock_sparse();
-
-	if (!cpumask_test_cpu(cpu, cpu_lp_mask))
-		reaffine_perf_irqs(true);
 
 	return 0;
 }
