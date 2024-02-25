@@ -623,6 +623,7 @@ static void prio_read(struct cache *ca, uint64_t bucket)
 static int open_dev(struct block_device *b, fmode_t mode)
 {
 	struct bcache_device *d = b->bd_disk->private_data;
+	
 	if (test_bit(BCACHE_DEV_CLOSING, &d->flags))
 		return -ENXIO;
 
@@ -633,6 +634,7 @@ static int open_dev(struct block_device *b, fmode_t mode)
 static void release_dev(struct gendisk *b, fmode_t mode)
 {
 	struct bcache_device *d = b->private_data;
+	
 	closure_put(&d->cl);
 }
 
@@ -640,6 +642,7 @@ static int ioctl_dev(struct block_device *b, fmode_t mode,
 		     unsigned int cmd, unsigned long arg)
 {
 	struct bcache_device *d = b->bd_disk->private_data;
+	
 	return d->ioctl(d, mode, cmd, arg);
 }
 
