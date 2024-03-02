@@ -4,9 +4,9 @@
 #include <linux/idr.h>
 #include <linux/slab.h>
 #include <linux/spinlock.h>
+#include <linux/xarray.h>
 
 DEFINE_PER_CPU(struct ida_bitmap *, ida_bitmap);
-static DEFINE_SPINLOCK(simple_ida_lock);
 
 /**
  * idr_alloc_u32() - Allocate an ID.
@@ -139,6 +139,46 @@ int idr_alloc_cyclic(struct idr *idr, void *ptr, int start, int end, gfp_t gfp)
 EXPORT_SYMBOL(idr_alloc_cyclic);
 
 /**
+ * idr_remove() - Remove an ID from the IDR.
+ * @idr: IDR handle.
+ * @id: Pointer ID.
+ *
+ * Removes this ID from the IDR.  If the ID was not previously in the IDR,
+ * this function returns %NULL.
+ *
+ * Since this function modifies the IDR, the caller should provide their
+ * own locking to ensure that concurrent modification of the same IDR is
+ * not possible.
+ *
+ * Return: The pointer formerly associated with this ID.
+ */
+void *idr_remove(struct idr *idr, unsigned long id)
+{
+	return radix_tree_delete_item(&idr->idr_rt, id - idr->idr_base, NULL);
+}
+EXPORT_SYMBOL_GPL(idr_remove);
+
+/**
+ * idr_find() - Return pointer for given ID.
+ * @idr: IDR handle.
+ * @id: Pointer ID.
+ *
+ * Looks up the pointer associated with this ID.  A %NULL pointer may
+ * indicate that @id is not allocated or that the %NULL pointer was
+ * associated with this ID.
+ *
+ * This function can be called under rcu_read_lock(), given that the leaf
+ * pointers lifetimes are correctly managed.
+ *
+ * Return: The pointer associated with this ID.
+ */
+void *idr_find(const struct idr *idr, unsigned long id)
+{
+	return radix_tree_lookup(&idr->idr_rt, id - idr->idr_base);
+}
+EXPORT_SYMBOL_GPL(idr_find);
+
+/**
  * idr_for_each() - Iterate through all stored pointers.
  * @idr: IDR handle.
  * @fn: Function to be called for each pointer.
@@ -160,9 +200,15 @@ int idr_for_each(const struct idr *idr,
 {
 	struct radix_tree_iter iter;
 	void __rcu **slot;
+	int base = idr->idr_base;
 
 	radix_tree_for_each_slot(slot, &idr->idr_rt, &iter, 0) {
-		int ret = fn(iter.index, rcu_dereference_raw(*slot), data);
+		int ret;
+		unsigned long id = iter.index + base;
+
+		if (WARN_ON_ONCE(id > INT_MAX))
+			break;
+		ret = fn(id, rcu_dereference_raw(*slot), data);
 		if (ret)
 			return ret;
 	}
@@ -170,44 +216,6 @@ int idr_for_each(const struct idr *idr,
 	return 0;
 }
 EXPORT_SYMBOL(idr_for_each);
-
-/**
- * idr_get_next() - Find next populated entry.
- * @idr: IDR handle.
- * @nextid: Pointer to an ID.
- *
- * Returns the next populated entry in the tree with an ID greater than
- * or equal to the value pointed to by @nextid.  On exit, @nextid is updated
- * to the ID of the found value.  To use in a loop, the value pointed to by
- * nextid must be incremented by the user.
- */
-void *idr_get_next(struct idr *idr, int *nextid)
-{
-	struct radix_tree_iter iter;
-	void __rcu **slot;
-	void *entry = NULL;
-
-	radix_tree_for_each_slot(slot, &idr->idr_rt, &iter, *nextid) {
-		entry = rcu_dereference_raw(*slot);
-		if (!entry)
-			continue;
-		if (!radix_tree_deref_retry(entry))
-			break;
-		if (slot != (void *)&idr->idr_rt.rnode &&
-				entry != (void *)RADIX_TREE_INTERNAL_NODE)
-			break;
-		slot = radix_tree_iter_retry(&iter);
-	}
-	if (!slot)
-		return NULL;
-
-	if (WARN_ON_ONCE(iter.index > INT_MAX))
-		return NULL;
-
-	*nextid = iter.index;
-	return entry;
-}
-EXPORT_SYMBOL(idr_get_next);
 
 /**
  * idr_get_next_ul() - Find next populated entry.
@@ -223,17 +231,54 @@ void *idr_get_next_ul(struct idr *idr, unsigned long *nextid)
 {
 	struct radix_tree_iter iter;
 	void __rcu **slot;
+	void *entry = NULL;
+	unsigned long base = idr->idr_base;
+	unsigned long id = *nextid;
 
-	slot = radix_tree_iter_find(&idr->idr_rt, &iter, *nextid);
+	id = (id < base) ? 0 : id - base;
+	radix_tree_for_each_slot(slot, &idr->idr_rt, &iter, id) {
+		entry = rcu_dereference_raw(*slot);
+		if (!entry)
+			continue;
+		if (!radix_tree_deref_retry(entry))
+			break;
+		if (slot != (void *)&idr->idr_rt.rnode &&
+				entry != (void *)RADIX_TREE_INTERNAL_NODE)
+			break;
+		slot = radix_tree_iter_retry(&iter);
+	}
 	if (!slot)
 		return NULL;
 
-	*nextid = iter.index;
-	return rcu_dereference_raw(*slot);
+	*nextid = iter.index + base;
+	return entry;
 }
 EXPORT_SYMBOL(idr_get_next_ul);
 
-/* idr_replace() - replace pointer for given ID.
+/**
+ * idr_get_next() - Find next populated entry.
+ * @idr: IDR handle.
+ * @nextid: Pointer to an ID.
+ *
+ * Returns the next populated entry in the tree with an ID greater than
+ * or equal to the value pointed to by @nextid.  On exit, @nextid is updated
+ * to the ID of the found value.  To use in a loop, the value pointed to by
+ * nextid must be incremented by the user.
+ */
+void *idr_get_next(struct idr *idr, int *nextid)
+{
+	unsigned long id = *nextid;
+	void *entry = idr_get_next_ul(idr, &id);
+
+	if (WARN_ON_ONCE(id > INT_MAX))
+		return NULL;
+	*nextid = id;
+	return entry;
+}
+EXPORT_SYMBOL(idr_get_next);
+
+/**
+ * idr_replace() - replace pointer for given ID.
  * @idr: IDR handle.
  * @ptr: New pointer to associate with the ID.
  * @id: ID to change.
@@ -244,18 +289,9 @@ EXPORT_SYMBOL(idr_get_next_ul);
  * the one being replaced!).
  *
  * Returns: the old value on success.  %-ENOENT indicates that @id was not
- * found.  %-EINVAL indicates that @id or @ptr were not valid.
+ * found.  %-EINVAL indicates that @ptr was not valid.
  */
-void *idr_replace(struct idr *idr, void *ptr, int id)
-{
-	if (id < 0)
-		return ERR_PTR(-EINVAL);
-
-	return idr_replace_ext(idr, ptr, id);
-}
-EXPORT_SYMBOL(idr_replace);
-
-void *idr_replace_ext(struct idr *idr, void *ptr, unsigned long id)
+void *idr_replace(struct idr *idr, void *ptr, unsigned long id)
 {
 	struct radix_tree_node *node;
 	void __rcu **slot = NULL;
@@ -263,6 +299,7 @@ void *idr_replace_ext(struct idr *idr, void *ptr, unsigned long id)
 
 	if (WARN_ON_ONCE(radix_tree_is_internal_node(ptr)))
 		return ERR_PTR(-EINVAL);
+	id -= idr->idr_base;
 
 	entry = __radix_tree_lookup(&idr->idr_rt, id, &node, &slot);
 	if (!slot || radix_tree_tag_get(&idr->idr_rt, id, IDR_FREE))
@@ -272,7 +309,7 @@ void *idr_replace_ext(struct idr *idr, void *ptr, unsigned long id)
 
 	return entry;
 }
-EXPORT_SYMBOL(idr_replace_ext);
+EXPORT_SYMBOL(idr_replace);
 
 /**
  * DOC: IDA description
@@ -282,18 +319,12 @@ EXPORT_SYMBOL(idr_replace_ext);
  * bit per ID, and so is more space efficient than an IDR.  To use an IDA,
  * define it using DEFINE_IDA() (or embed a &struct ida in a data structure,
  * then initialise it using ida_init()).  To allocate a new ID, call
- * ida_simple_get().  To free an ID, call ida_simple_remove().
+ * ida_alloc(), ida_alloc_min(), ida_alloc_max() or ida_alloc_range().
+ * To free an ID, call ida_free().
  *
- * If you have more complex locking requirements, use a loop around
- * ida_pre_get() and ida_get_new() to allocate a new ID.  Then use
- * ida_remove() to free an ID.  You must make sure that ida_get_new() and
- * ida_remove() cannot be called at the same time as each other for the
- * same IDA.
- *
- * You can also use ida_get_new_above() if you need an ID to be allocated
- * above a particular number.  ida_destroy() can be used to dispose of an
- * IDA without needing to free the individual IDs in it.  You can use
- * ida_is_empty() to find out whether the IDA has any IDs currently allocated.
+ * ida_destroy() can be used to dispose of an IDA without needing to
+ * free the individual IDs in it.  You can use ida_is_empty() to find
+ * out whether the IDA has any IDs currently allocated.
  *
  * IDs are currently limited to the range [0-INT_MAX].  If this is an awkward
  * limitation, it should be quite straightforward to raise the maximum.
@@ -334,25 +365,7 @@ EXPORT_SYMBOL(idr_replace_ext);
 
 #define IDA_MAX (0x80000000U / IDA_BITMAP_BITS - 1)
 
-/**
- * ida_get_new_above - allocate new ID above or equal to a start id
- * @ida: ida handle
- * @start: id to start search at
- * @id: pointer to the allocated handle
- *
- * Allocate new ID above or equal to @start.  It should be called
- * with any required locks to ensure that concurrent calls to
- * ida_get_new_above() / ida_get_new() / ida_remove() are not allowed.
- * Consider using ida_simple_get() if you do not have complex locking
- * requirements.
- *
- * If memory is required, it will return %-EAGAIN, you should unlock
- * and go back to the ida_pre_get() call.  If the ida is full, it will
- * return %-ENOSPC.  On success, it will return 0.
- *
- * @id returns a value in the range @start ... %0x7fffffff.
- */
-int ida_get_new_above(struct ida *ida, int start, int *id)
+static int ida_get_new_above(struct ida *ida, int start)
 {
 	struct radix_tree_root *root = &ida->ida_rt;
 	void __rcu **slot;
@@ -391,13 +404,12 @@ int ida_get_new_above(struct ida *ida, int start, int *id)
 			if (ebit < BITS_PER_LONG) {
 				tmp |= 1UL << ebit;
 				rcu_assign_pointer(*slot, (void *)tmp);
-				*id = new + ebit - RADIX_TREE_EXCEPTIONAL_SHIFT;
-				return 0;
+				return new + ebit -
+					RADIX_TREE_EXCEPTIONAL_SHIFT;
 			}
 			bitmap = this_cpu_xchg(ida_bitmap, NULL);
 			if (!bitmap)
 				return -EAGAIN;
-			memset(bitmap, 0, sizeof(*bitmap));
 			bitmap->bitmap[0] = tmp >> RADIX_TREE_EXCEPTIONAL_SHIFT;
 			rcu_assign_pointer(*slot, bitmap);
 		}
@@ -424,31 +436,20 @@ int ida_get_new_above(struct ida *ida, int start, int *id)
 						RADIX_TREE_EXCEPTIONAL_ENTRY);
 				radix_tree_iter_replace(root, &iter, slot,
 						bitmap);
-				*id = new;
-				return 0;
+				return new;
 			}
 			bitmap = this_cpu_xchg(ida_bitmap, NULL);
 			if (!bitmap)
 				return -EAGAIN;
-			memset(bitmap, 0, sizeof(*bitmap));
 			__set_bit(bit, bitmap->bitmap);
 			radix_tree_iter_replace(root, &iter, slot, bitmap);
 		}
 
-		*id = new;
-		return 0;
+		return new;
 	}
 }
-EXPORT_SYMBOL(ida_get_new_above);
 
-/**
- * ida_remove - Free the given ID
- * @ida: ida handle
- * @id: ID to free
- *
- * This function should not be called at the same time as ida_get_new_above().
- */
-void ida_remove(struct ida *ida, int id)
+static void ida_remove(struct ida *ida, int id)
 {
 	unsigned long index = id / IDA_BITMAP_BITS;
 	unsigned offset = id % IDA_BITMAP_BITS;
@@ -485,107 +486,98 @@ void ida_remove(struct ida *ida, int id)
 	}
 	return;
  err:
-	WARN(1, "ida_remove called for id=%d which is not allocated.\n", id);
+	WARN(1, "ida_free called for id=%d which is not allocated.\n", id);
 }
-EXPORT_SYMBOL(ida_remove);
 
 /**
- * ida_destroy - Free the contents of an ida
- * @ida: ida handle
+ * ida_destroy() - Free all IDs.
+ * @ida: IDA handle.
  *
- * Calling this function releases all resources associated with an IDA.  When
- * this call returns, the IDA is empty and can be reused or freed.  The caller
- * should not allow ida_remove() or ida_get_new_above() to be called at the
- * same time.
+ * Calling this function frees all IDs and releases all resources used
+ * by an IDA.  When this call returns, the IDA is empty and can be reused
+ * or freed.  If the IDA is already empty, there is no need to call this
+ * function.
+ *
+ * Context: Any context.
  */
 void ida_destroy(struct ida *ida)
 {
+	unsigned long flags;
 	struct radix_tree_iter iter;
 	void __rcu **slot;
 
+	xa_lock_irqsave(&ida->ida_rt, flags);
 	radix_tree_for_each_slot(slot, &ida->ida_rt, &iter, 0) {
 		struct ida_bitmap *bitmap = rcu_dereference_raw(*slot);
 		if (!radix_tree_exception(bitmap))
 			kfree(bitmap);
 		radix_tree_iter_delete(&ida->ida_rt, &iter, slot);
 	}
+	xa_unlock_irqrestore(&ida->ida_rt, flags);
 }
 EXPORT_SYMBOL(ida_destroy);
 
 /**
- * ida_simple_get - get a new id.
- * @ida: the (initialized) ida.
- * @start: the minimum id (inclusive, < 0x8000000)
- * @end: the maximum id (exclusive, < 0x8000000 or 0)
- * @gfp_mask: memory allocation flags
+ * ida_alloc_range() - Allocate an unused ID.
+ * @ida: IDA handle.
+ * @min: Lowest ID to allocate.
+ * @max: Highest ID to allocate.
+ * @gfp: Memory allocation flags.
  *
- * Allocates an id in the range start <= id < end, or returns -ENOSPC.
- * On memory allocation failure, returns -ENOMEM.
+ * Allocate an ID between @min and @max, inclusive.  The allocated ID will
+ * not exceed %INT_MAX, even if @max is larger.
  *
- * Compared to ida_get_new_above() this function does its own locking, and
- * should be used unless there are special requirements.
- *
- * Use ida_simple_remove() to get rid of an id.
+ * Context: Any context.
+ * Return: The allocated ID, or %-ENOMEM if memory could not be allocated,
+ * or %-ENOSPC if there are no free IDs.
  */
-int ida_simple_get(struct ida *ida, unsigned int start, unsigned int end,
-		   gfp_t gfp_mask)
+int ida_alloc_range(struct ida *ida, unsigned int min, unsigned int max,
+			gfp_t gfp)
 {
-	int ret, id;
-	unsigned int max;
+	int id = 0;
 	unsigned long flags;
 
-	BUG_ON((int)start < 0);
-	BUG_ON((int)end < 0);
+	if ((int)min < 0)
+		return -ENOSPC;
 
-	if (end == 0)
-		max = 0x80000000;
-	else {
-		BUG_ON(end < start);
-		max = end - 1;
-	}
+	if ((int)max < 0)
+		max = INT_MAX;
 
 again:
-	if (!ida_pre_get(ida, gfp_mask))
-		return -ENOMEM;
-
-	spin_lock_irqsave(&simple_ida_lock, flags);
-	ret = ida_get_new_above(ida, start, &id);
-	if (!ret) {
-		if (id > max) {
-			ida_remove(ida, id);
-			ret = -ENOSPC;
-		} else {
-			ret = id;
-		}
+	xa_lock_irqsave(&ida->ida_rt, flags);
+	id = ida_get_new_above(ida, min);
+	if (id > (int)max) {
+		ida_remove(ida, id);
+		id = -ENOSPC;
 	}
-	spin_unlock_irqrestore(&simple_ida_lock, flags);
+	xa_unlock_irqrestore(&ida->ida_rt, flags);
 
-	if (unlikely(ret == -EAGAIN))
+	if (unlikely(id == -EAGAIN)) {
+		if (!ida_pre_get(ida, gfp))
+			return -ENOMEM;
 		goto again;
+	}
 
-	return ret;
+	return id;
 }
-EXPORT_SYMBOL(ida_simple_get);
+EXPORT_SYMBOL(ida_alloc_range);
 
 /**
- * ida_simple_remove - remove an allocated id.
- * @ida: the (initialized) ida.
- * @id: the id returned by ida_simple_get.
+ * ida_free() - Release an allocated ID.
+ * @ida: IDA handle.
+ * @id: Previously allocated ID.
  *
- * Use to release an id allocated with ida_simple_get().
- *
- * Compared to ida_remove() this function does its own locking, and should be
- * used unless there are special requirements.
+ * Context: Any context.
  */
-void ida_simple_remove(struct ida *ida, unsigned int id)
+void ida_free(struct ida *ida, unsigned int id)
 {
 	unsigned long flags;
 
 	if ((int)id < 0)
 		return;
 
-	spin_lock_irqsave(&simple_ida_lock, flags);
+	xa_lock_irqsave(&ida->ida_rt, flags);
 	ida_remove(ida, id);
-	spin_unlock_irqrestore(&simple_ida_lock, flags);
+	xa_unlock_irqrestore(&ida->ida_rt, flags);
 }
-EXPORT_SYMBOL(ida_simple_remove);
+EXPORT_SYMBOL(ida_free);

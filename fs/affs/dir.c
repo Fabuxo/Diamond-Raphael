@@ -14,6 +14,7 @@
  *
  */
 
+#include <linux/iversion.h>
 #include "affs.h"
 
 static int affs_readdir(struct file *, struct dir_context *);
@@ -130,7 +131,7 @@ inside:
 		} while (ino);
 	}
 done:
-	file->f_version = inode->i_version;
+	file->f_version = inode_query_iversion(inode);
 	file->private_data = (void *)(long)ino;
 	affs_brelse(fh_bh);
 

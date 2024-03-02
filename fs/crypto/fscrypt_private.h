@@ -190,6 +190,7 @@ struct fscrypt_prepared_key {
  * inode is evicted.
  */
 struct fscrypt_info {
+
 	/* The key in a form prepared for actual encryption/decryption */
 	struct fscrypt_prepared_key	ci_key;
 
@@ -245,7 +246,6 @@ struct fscrypt_info {
 
 	/* This inode's nonce, copied from the fscrypt_context */
 	u8 ci_nonce[FS_KEY_DERIVATION_NONCE_SIZE];
-	u8 ci_raw_key[FSCRYPT_MAX_KEY_SIZE];
 
 	/* Hashed inode number.  Only set for IV_INO_LBLK_32 */
 	u32 ci_hashed_ino;
@@ -362,13 +362,16 @@ fscrypt_is_key_prepared(struct fscrypt_prepared_key *prep_key,
 			const struct fscrypt_info *ci)
 {
 	/*
-	 * The READ_ONCE() here pairs with the smp_store_release() in
-	 * fscrypt_prepare_key().  (This only matters for the per-mode keys,
-	 * which are shared by multiple inodes.)
+	 * The two smp_load_acquire()'s here pair with the smp_store_release()'s
+	 * in fscrypt_prepare_inline_crypt_key() and fscrypt_prepare_key().
+	 * I.e., in some cases (namely, if this prep_key is a per-mode
+	 * encryption key) another task can publish blk_key or tfm concurrently,
+	 * executing a RELEASE barrier.  We need to use smp_load_acquire() here
+	 * to safely ACQUIRE the memory the other task published.
 	 */
 	if (fscrypt_using_inline_encryption(ci))
-		return READ_ONCE(prep_key->blk_key) != NULL;
-	return READ_ONCE(prep_key->tfm) != NULL;
+		return smp_load_acquire(&prep_key->blk_key) != NULL;
+	return smp_load_acquire(&prep_key->tfm) != NULL;
 }
 
 extern int fscrypt_find_storage_type(char **device);
@@ -417,7 +420,7 @@ static inline bool
 fscrypt_is_key_prepared(struct fscrypt_prepared_key *prep_key,
 			const struct fscrypt_info *ci)
 {
-	return READ_ONCE(prep_key->tfm) != NULL;
+	return smp_load_acquire(&prep_key->tfm) != NULL;
 }
 
 static inline int fscrypt_find_storage_type(char **device)

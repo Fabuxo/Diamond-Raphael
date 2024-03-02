@@ -424,7 +424,8 @@ smb3_query_mf_symlink(unsigned int xid, struct cifs_tcon *tcon,
 		return  -ENOMEM;
 	}
 
-	rc = SMB2_open(xid, &oparms, utf16_path, &oplock, pfile_info, NULL);
+	rc = SMB2_open(xid, &oparms, utf16_path, &oplock, pfile_info, NULL,
+		       NULL);
 	if (rc)
 		goto qmf_out_open_fail;
 
@@ -480,8 +481,10 @@ smb3_create_mf_symlink(unsigned int xid, struct cifs_tcon *tcon,
 	oparms.disposition = FILE_CREATE;
 	oparms.fid = &fid;
 	oparms.reconnect = false;
+	oparms.mode = 0644;
 
-	rc = SMB2_open(xid, &oparms, utf16_path, &oplock, NULL, NULL);
+	rc = SMB2_open(xid, &oparms, utf16_path, &oplock, NULL, NULL,
+		       NULL);
 	if (rc) {
 		kfree(utf16_path);
 		return rc;
