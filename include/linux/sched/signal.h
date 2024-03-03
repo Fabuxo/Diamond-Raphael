@@ -586,9 +586,9 @@ static inline struct pid *task_session(struct task_struct *task)
 	return task->signal->pids[PIDTYPE_SID];
 }
 
-static inline int get_nr_threads(struct task_struct *tsk)
+static inline int get_nr_threads(struct task_struct *task)
 {
-	return tsk->signal->nr_threads;
+	return task->signal->nr_threads;
 }
 
 static inline bool thread_group_leader(struct task_struct *p)

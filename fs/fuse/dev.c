@@ -66,11 +66,9 @@ static struct fuse_req *__fuse_request_alloc(unsigned npages, gfp_t flags)
 			pages = req->inline_pages;
 			page_descs = req->inline_page_descs;
 		} else {
-			pages = kmalloc_array(npages, sizeof(struct page *),
-					      flags);
-			page_descs = kmalloc_array(npages,
-						   sizeof(struct fuse_page_desc),
-						   flags);
+			pages = kmalloc(sizeof(struct page *) * npages, flags);
+			page_descs = kmalloc(sizeof(struct fuse_page_desc) *
+					     npages, flags);
 		}
 
 		if (!pages || !page_descs) {
@@ -114,6 +112,13 @@ void __fuse_get_request(struct fuse_req *req)
 static void __fuse_put_request(struct fuse_req *req)
 {
 	refcount_dec(&req->count);
+}
+
+static void fuse_req_init_context(struct fuse_conn *fc, struct fuse_req *req)
+{
+	req->in.h.uid = from_kuid_munged(&init_user_ns, current_fsuid());
+	req->in.h.gid = from_kgid_munged(&init_user_ns, current_fsgid());
+	req->in.h.pid = pid_nr_ns(task_pid(current), fc->pid_ns);
 }
 
 void fuse_set_initialized(struct fuse_conn *fc)
@@ -174,19 +179,11 @@ static struct fuse_req *__fuse_get_req(struct fuse_conn *fc, unsigned npages,
 		goto out;
 	}
 
-	req->in.h.uid = from_kuid(fc->user_ns, current_fsuid());
-	req->in.h.gid = from_kgid(fc->user_ns, current_fsgid());
-	req->in.h.pid = pid_nr_ns(task_pid(current), fc->pid_ns);
-
+	fuse_req_init_context(fc, req);
 	__set_bit(FR_WAITING, &req->flags);
 	if (for_background)
 		__set_bit(FR_BACKGROUND, &req->flags);
 
-	if (unlikely(req->in.h.uid == ((uid_t)-1) ||
-		     req->in.h.gid == ((gid_t)-1))) {
-		fuse_put_request(fc, req);
-		return ERR_PTR(-EOVERFLOW);
-	}
 	return req;
 
  out:
@@ -275,10 +272,7 @@ struct fuse_req *fuse_get_req_nofail_nopages(struct fuse_conn *fc,
 	if (!req)
 		req = get_reserved_req(fc, file);
 
-	req->in.h.uid = from_kuid_munged(fc->user_ns, current_fsuid());
-	req->in.h.gid = from_kgid_munged(fc->user_ns, current_fsgid());
-	req->in.h.pid = pid_nr_ns(task_pid(current), fc->pid_ns);
-
+	fuse_req_init_context(fc, req);
 	__set_bit(FR_WAITING, &req->flags);
 	__clear_bit(FR_BACKGROUND, &req->flags);
 	return req;
@@ -309,6 +303,7 @@ void fuse_put_request(struct fuse_conn *fc, struct fuse_req *req)
 			fuse_request_free(req);
 	}
 }
+EXPORT_SYMBOL_GPL(fuse_put_request);
 
 static unsigned len_args(unsigned numargs, struct fuse_arg *args)
 {
@@ -839,8 +834,7 @@ static int fuse_check_page(struct page *page)
 	       1 << PG_uptodate |
 	       1 << PG_lru |
 	       1 << PG_active |
-	       1 << PG_reclaim |
-	       LRU_GEN_MASK | LRU_REFS_MASK))) {
+	       1 << PG_reclaim))) {
 		printk(KERN_WARNING "fuse: trying to steal weird page\n");
 		printk(KERN_WARNING "  page=%p index=%li flags=%08lx, count=%i, mapcount=%i, mapping=%p\n", page, page->index, page->flags, page_count(page), page_mapcount(page), page->mapping);
 		return 1;
@@ -1315,6 +1309,12 @@ static ssize_t fuse_dev_do_read(struct fuse_dev *fud, struct file *file,
 	in = &req->in;
 	reqsize = in->h.len;
 
+	if (task_active_pid_ns(current) != fc->pid_ns) {
+		rcu_read_lock();
+		in->h.pid = pid_vnr(find_pid_ns(in->h.pid, fc->pid_ns));
+		rcu_read_unlock();
+	}
+
 	/* If request is too large, reply with an error and restart the read */
 	if (nbytes < reqsize) {
 		req->out.h.error = -EIO;
@@ -1422,8 +1422,7 @@ static ssize_t fuse_dev_splice_read(struct file *in, loff_t *ppos,
 	if (!fud)
 		return -EPERM;
 
-	bufs = kmalloc_array(pipe->buffers, sizeof(struct pipe_buffer),
-			     GFP_KERNEL);
+	bufs = kmalloc(pipe->buffers * sizeof(struct pipe_buffer), GFP_KERNEL);
 	if (!bufs)
 		return -ENOMEM;
 
@@ -2018,8 +2017,7 @@ static ssize_t fuse_dev_splice_write(struct pipe_inode_info *pipe,
 
 	pipe_lock(pipe);
 
-	bufs = kmalloc_array(pipe->buffers, sizeof(struct pipe_buffer),
-			     GFP_KERNEL);
+	bufs = kmalloc(pipe->buffers * sizeof(struct pipe_buffer), GFP_KERNEL);
 	if (!bufs) {
 		pipe_unlock(pipe);
 		return -ENOMEM;
