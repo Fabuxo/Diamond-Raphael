@@ -156,7 +156,6 @@ function make_image()
 
 	SUPPORTS_THINLTO_CLANG=$(grep CONFIG_ARCH_SUPPORTS_THINLTO ${objdir}/.config)
 	SUPPORTS_FULL_CLANG=$(grep CONFIG_ARCH_SUPPORTS_LTO_CLANG ${objdir}/.config)
-	EROFS_STATE=$(grep CONFIG_EROFS_FS= ${objdir}/.config)
 
 	if [[ ${BUILD_LTO} == true && ${BUILD_FULL_LTO} == true  ||  ${BUILD_LTO} == false && ${BUILD_FULL_LTO} == false ]]; then
 		print ${RED} "Both LTO and FULL_LTO is true/false!"
@@ -193,10 +192,6 @@ function make_image()
 		print ${LGR} "${LRD}Disabling ${YEL}Casefolding"
 		ENABLE_CONF+=" CONFIG_SDCARD_FS"
 		DISABLE_CONF+=" CONFIG_UNICODE"
-	fi
-
-	if [[ ${EROFS_STATE} == CONFIG_EROFS_FS=y ]]; then
-		print "${YEL}EROFS ${CYN}enabled"
 	fi
 
         if [ ${BUILD_KSU} == true ]; then
@@ -262,10 +257,6 @@ function completion()
 			ZIP_NAME+="-CASEFOLDING"
 		fi
 
-		if [[ ${EROFS_STATE} == CONFIG_EROFS_FS=y ]]; then
-			ZIP_NAME+="-EROFS"
-		fi
-
 		if [[ ${RELEASE} == true ]]; then
 			ZIP_NAME+="-${DATE}-RELEASE${CUSTOM_NAME}"
 		else
@@ -282,9 +273,6 @@ function completion()
 			add_to_banner " CASEFOLDING"
 		else
 			add_to_banner " SDCARD FS"
-		fi
-		if [[ ${EROFS_STATE} == CONFIG_EROFS_FS=y ]]; then
-			add_to_banner " EROFS"
 		fi
 		if [[ $(grep CONFIG_INITRAMFS_IGNORE_SKIP_FLAG= ${objdir}/.config) == CONFIG_INITRAMFS_IGNORE_SKIP_FLAG=y ]]; then
 			add_to_banner " Dynamic Partitions"
