@@ -8,7 +8,7 @@
 # Build Information and directories
 kernel_dir="${PWD}"
 builddir="${kernel_dir}/Zip-out"
-kVersion="1.4"
+kVersion="1.7"
 
 # Arch and target image
 export ARCH="arm64"
