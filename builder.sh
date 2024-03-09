@@ -126,8 +126,6 @@ function format_time()
 function make_wrapper() {
 		PATH=${CT_BIN}:${PATH} \
 		make -s -j${cpus} \
-		LLVM=1 \
-		LLVM_IAS=1 \
 		CC="ccache clang" \
 		CROSS_COMPILE="aarch64-linux-gnu-" \
 		CROSS_COMPILE_ARM32="arm-linux-gnueabi-" \

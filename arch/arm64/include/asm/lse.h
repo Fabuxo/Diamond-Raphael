@@ -10,8 +10,6 @@
 
 #else	/* __ASSEMBLER__ */
 
-__asm__(".arch_extension	lse");
-
 #define ARM64_LSE_ATOMIC_INSN(lse)					\
 	__LSE_PREAMBLE lse
 
