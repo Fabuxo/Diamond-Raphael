@@ -583,7 +583,6 @@ firmware: firmware {
 	#address-cells = <1>;
 	#size-cells = <1>;
 	ranges = <0 0 0 0xffffffff>;
-	#gpio-cells = <2>;
 	compatible = "simple-bus";
 	
 	psci {

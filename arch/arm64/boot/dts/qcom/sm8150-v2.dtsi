@@ -1,15 +1,3 @@
-/* Copyright (c) 2019-2020, The Linux Foundation. All rights reserved.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 and
- * only version 2 as published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- */
-
 #include "sm8150.dtsi"
 #include "sm8150-v2-camera.dtsi"
 
@@ -19,79 +7,25 @@
 	qcom,msm-id = <339 0x20000>;
 };
 
+&CPU4 {
+	dynamic-power-coefficient = <533>;
+};
+
+&CPU5 {
+	dynamic-power-coefficient = <533>;
+};
+
+&CPU6 {
+	dynamic-power-coefficient = <533>;
+};
+
+&CPU7 {
+	dynamic-power-coefficient = <642>;
+};
+
 /* Remove smmu nodes specific to SM8150 */
 /delete-node/ &apps_smmu;
 /delete-node/ &kgsl_smmu;
-
-&soc {
-	/delete-node/ llcc-bw-opp-table;
-	/delete-node/ ddr-bw-opp-table;
-	/delete-node/ suspendable-ddr-bw-opp-table;
-};
-
-&clock_cpucc {
-	qcom,cpufreq-table-0 =
-		< 300000>,
-		< 403200>,
-		< 499200>,
-		< 576000>,
-		< 672000>,
-		< 768000>,
-		< 844800>,
-		< 940800>,
-		<1036800>,
-		<1113600>,
-		<1209600>,
-		<1305600>,
-		<1382400>,
-		<1478400>,
-		<1555200>,
-		<1632000>,
-		<1708800>,
-		<1785600>;
-
-	qcom,cpufreq-table-4 =
-		< 710400>,
-		< 825600>,
-		< 940800>,
-		<1056000>,
-		<1171200>,
-		<1286400>,
-		<1401600>,
-		<1497600>,
-		<1612800>,
-		<1708800>,
-		<1804800>,
-		<1920000>,
-		<2016000>,
-		<2131200>,
-		<2227200>,
-		<2323200>,
-		<2419200>;
-
-	qcom,cpufreq-table-7 =
-		< 825600>,
-		< 940800>,
-		<1056000>,
-		<1171200>,
-		<1286400>,
-		<1401600>,
-		<1497600>,
-		<1612800>,
-		<1708800>,
-		<1804800>,
-		<1920000>,
-		<2016000>,
-		<2131200>,
-		<2227200>,
-		<2323200>,
-		<2419200>,
-		<2534400>,
-		<2649600>,
-		<2745600>,
-		<2841600>,
-		<2956800>;
-};
 
 &mdss_mdp {
 	qcom,fullsize-va-map;
@@ -229,227 +163,8 @@
 
 #include "sm8150-gpu-v2.dtsi"
 
-/* GPU overrides */
-&msm_gpu {
-	/* Updated chip ID */
-	qcom,chipid = <0x06040001>;
-
-	/* Power level to start throttling */
-	qcom,throttle-pwrlevel = <0>;
-
-	/* Updated Bus Scale Settings */
-	qcom,msm-bus,num-cases = <12>;
-
-	/*
-	 * Value for vote is: (DDR freq) * 4 - 5
-	 * The 5 value is to ensure that there is no rounding errors
-	 * where the total request doesn't divide evenly by the BCM
-	 * DDR bandwidth unit (note, 5 is greater than this unit).
-	 */
-	qcom,msm-bus,vectors-KBps =
-		<26 512 0 0>,          // 0 bus=0
-		<26 512 0 795000>,     // 1 bus=200
-		<26 512 0 1195000>,    // 2 bus=300
-		<26 512 0 1799000>,    // 3 bus=451
-		<26 512 0 2183000>,    // 4 bus=547
-		<26 512 0 2719000>,    // 5 bus=681
-		<26 512 0 3067000>,    // 6 bus=768
-		<26 512 0 4063000>,    // 7 bus=1017
-		<26 512 0 5407000>,    // 8 bus=1353
-		<26 512 0 6215000>,    // 9 bus=1555
-		<26 512 0 7211000>,    // 10 bus=1804
-		<26 512 0 8363000>;    // 11 bus=2092
-
-	/delete-property/qcom,initial-pwrlevel;
-
-	operating-points-v2 = <&gpu_opp_table_v2>;
-
-	qcom,gpu-speed-bin = <0x4130 0xe0000000 29>;
-
-	/delete-node/qcom,gpu-pwrlevels;
-	qcom,gpu-pwrlevel-bins {
-		#address-cells = <1>;
-		#size-cells = <0>;
-
-		compatible="qcom,gpu-pwrlevel-bins";
-		qcom,gpu-pwrlevels-0 {
-			#address-cells = <1>;
-			#size-cells = <0>;
-
-			qcom,speed-bin = <0>;
-			qcom,initial-pwrlevel = <5>;
-
-			qcom,gpu-pwrlevel@0 {
-				reg = <0>;
-				qcom,gpu-freq = <675000000>;
-				qcom,bus-freq = <11>;
-				qcom,bus-min = <11>;
-				qcom,bus-max = <11>;
-			};
-
-			qcom,gpu-pwrlevel@1 {
-				reg = <1>;
-				qcom,gpu-freq = <585000000>;
-				qcom,bus-freq = <10>;
-				qcom,bus-min = <9>;
-				qcom,bus-max = <11>;
-			};
-
-			qcom,gpu-pwrlevel@2 {
-				reg = <2>;
-				qcom,gpu-freq = <499200000>;
-				qcom,bus-freq = <9>;
-				qcom,bus-min = <8>;
-				qcom,bus-max = <11>;
-			};
-
-			qcom,gpu-pwrlevel@3 {
-				reg = <3>;
-				qcom,gpu-freq = <427000000>;
-				qcom,bus-freq = <6>;
-				qcom,bus-min = <5>;
-				qcom,bus-max = <9>;
-			};
-
-			qcom,gpu-pwrlevel@4 {
-				reg = <4>;
-				qcom,gpu-freq = <345000000>;
-				qcom,bus-freq = <4>;
-				qcom,bus-min = <3>;
-				qcom,bus-max = <5>;
-			};
-
-			qcom,gpu-pwrlevel@5 {
-				reg = <5>;
-				qcom,gpu-freq = <257000000>;
-				qcom,bus-freq = <3>;
-				qcom,bus-min = <2>;
-				qcom,bus-max = <4>;
-			};
-
-			qcom,gpu-pwrlevel@6 {
-				reg = <6>;
-				qcom,gpu-freq = <0>;
-				qcom,bus-freq = <0>;
-				qcom,bus-min = <0>;
-				qcom,bus-max = <0>;
-			};
-		};
-		qcom,gpu-pwrlevels-1 {
-			#address-cells = <1>;
-			#size-cells = <0>;
-
-			qcom,speed-bin = <1>;
-			qcom,initial-pwrlevel = <5>;
-
-			qcom,gpu-pwrlevel@0 {
-				reg = <0>;
-				qcom,gpu-freq = <675000000>;
-				qcom,bus-freq = <11>;
-				qcom,bus-min = <11>;
-				qcom,bus-max = <11>;
-			};
-
-			qcom,gpu-pwrlevel@1 {
-				reg = <1>;
-				qcom,gpu-freq = <585000000>;
-				qcom,bus-freq = <10>;
-				qcom,bus-min = <9>;
-				qcom,bus-max = <11>;
-			};
-
-			qcom,gpu-pwrlevel@2 {
-				reg = <2>;
-				qcom,gpu-freq = <499200000>;
-				qcom,bus-freq = <9>;
-				qcom,bus-min = <8>;
-				qcom,bus-max = <11>;
-			};
-
-			qcom,gpu-pwrlevel@3 {
-				reg = <3>;
-				qcom,gpu-freq = <427000000>;
-				qcom,bus-freq = <6>;
-				qcom,bus-min = <5>;
-				qcom,bus-max = <9>;
-			};
-
-			qcom,gpu-pwrlevel@4 {
-				reg = <4>;
-				qcom,gpu-freq = <345000000>;
-				qcom,bus-freq = <4>;
-				qcom,bus-min = <3>;
-				qcom,bus-max = <5>;
-			};
-
-			qcom,gpu-pwrlevel@5 {
-				reg = <5>;
-				qcom,gpu-freq = <257000000>;
-				qcom,bus-freq = <3>;
-				qcom,bus-min = <2>;
-				qcom,bus-max = <4>;
-			};
-
-			qcom,gpu-pwrlevel@6 {
-				reg = <6>;
-				qcom,gpu-freq = <0>;
-				qcom,bus-freq = <0>;
-				qcom,bus-min = <0>;
-				qcom,bus-max = <0>;
-			};
-		};
-	};
-
-	qcom,l3-pwrlevels {
-		#address-cells = <1>;
-		#size-cells = <0>;
-
-		compatible = "qcom,l3-pwrlevels";
-
-		qcom,l3-pwrlevel@0 {
-			reg = <0>;
-			qcom,l3-freq = <0>;
-		};
-
-		qcom,l3-pwrlevel@1 {
-			reg = <1>;
-			qcom,l3-freq = <1344000000>;
-		};
-
-		qcom,l3-pwrlevel@2 {
-			reg = <2>;
-			qcom,l3-freq = <1612800000>;
-		};
-	};
-};
-
-&gmu {
-	reg = <0x2c6a000 0x30000>,
-		<0xb290000 0x10000>,
-		<0xb490000 0x10000>;
-	reg-names = "kgsl_gmu_reg",
-		"kgsl_gmu_pdc_cfg",
-		"kgsl_gmu_pdc_seq";
-
-	qcom,gpu-acd-table {
-		/* Corresponds to levels in the GPU perf table */
-		qcom,acd-enable-by-level = <0x7e>;
-		qcom,acd-stride = <0x2>;
-		qcom,acd-num-levels = <0x6>;
-
-		/* ACDCR, ACDTD */
-		qcom,acd-data = <0xa02d5ffd 0x00007611 /* LowSVS */
-				0xa02d5ffd 0x00006911 /* SVS */
-				0xa02d5ffd 0x00006111 /* SVS_L1 */
-				0xa02d5ffd 0x00006011 /* SVS_L2 */
-				0x802d5ffd 0x00005411 /* NOM */
-				0x802d5ffd 0x00005411>; /* NOM_L1 */
-	};
-};
-
 /* NPU overrides */
 &msm_npu {
-	iommus = <&apps_smmu 0x1081 0x400>;
 	qcom,npu-pwrlevels {
 		#address-cells = <1>;
 		#size-cells = <0>;
@@ -458,146 +173,199 @@
 		qcom,npu-pwrlevel@0 {
 			reg = <0>;
 			vreg = <1>;
-			clk-freq = <0
-				0
-				0
+			clk-freq = <19200000
 				100000000
 				300000000
 				300000000
-				19200000
-				150000000
+				300000000
+				300000000
+				200000000
+				40000000
+				300000000
 				100000000
-				37500000
 				19200000
-				60000000
+				50000000
+				50000000
+				100000000
+				100000000
 				100000000
 				19200000
+				100000000
 				19200000
-				0
+				50000000
+				200000000
+				200000000
+				50000000
 				19200000
 				300000000
+				300000000
 				19200000
-				19200000>;
+				300000000>;
 		};
+
 		qcom,npu-pwrlevel@1 {
 			reg = <1>;
 			vreg = <2>;
-			clk-freq = <0
-				0
-				0
-				150000000
-				400000000
-				400000000
-				37500000
+			clk-freq = <19200000
 				200000000
-				150000000
-				75000000
+				406000000
+				406000000
+				406000000
+				406000000
+				267000000
+				40000000
+				403000000
+				200000000
 				19200000
-				120000000
-				150000000
+				50000000
+				50000000
+				200000000
+				200000000
+				200000000
 				19200000
+				200000000
 				19200000
-				0
+				50000000
+				406000000
+				406000000
+				50000000
 				19200000
-				400000000
+				406000000
+				406000000
 				19200000
-				19200000>;
+				400000000>;
 		};
+
 		qcom,npu-pwrlevel@2 {
 			reg = <2>;
 			vreg = <3>;
-			clk-freq = <0
-				0
-				0
-				200000000
-				487000000
-				487000000
-				37500000
-				300000000
-				200000000
-				150000000
+			clk-freq = <19200000
+				333000000
+				533000000
+				533000000
+				533000000
+				533000000
+				403000000
+				75000000
+				533000000
+				214000000
 				19200000
-				240000000
-				200000000
+				50000000
+				100000000
+				214000000
+				214000000
+				214000000
 				19200000
+				214000000
 				19200000
-				0
+				50000000
+				533000000
+				533000000
+				50000000
 				19200000
-				487000000
+				533000000
+				533000000
 				19200000
-				19200000>;
+				500000000>;
 		};
+
 		qcom,npu-pwrlevel@3 {
 			reg = <3>;
 			vreg = <4>;
-			clk-freq = <0
-				0
-				0
-				300000000
-				652000000
-				652000000
+			clk-freq = <19200000
+				428000000
+				730000000
+				730000000
+				730000000
+				730000000
+				533000000
 				75000000
-				403000000
-				300000000
-				150000000
-				19200000
-				240000000
+				700000000
 				300000000
 				19200000
+				100000000
+				200000000
+				300000000
+				300000000
+				300000000
 				19200000
-				0
+				300000000
 				19200000
-				652000000
+				100000000
+				730000000
+				730000000
+				100000000
 				19200000
-				19200000>;
+				730000000
+				730000000
+				19200000
+				660000000>;
 		};
+
 		qcom,npu-pwrlevel@4 {
 			reg = <4>;
 			vreg = <6>;
-			clk-freq = <0
-				0
-				0
-				400000000
-				811000000
-				811000000
+			clk-freq = <19200000
+				500000000
+				920000000
+				920000000
+				920000000
+				920000000
+				700000000
 				75000000
-				533000000
-				400000000
-				150000000
+				806000000
+				300000000
+				19200000
+				100000000
+				200000000
+				300000000
+				300000000
+				300000000
 				19200000
 				300000000
-				400000000
 				19200000
+				100000000
+				920000000
+				920000000
+				100000000
 				19200000
-				0
+				920000000
+				920000000
 				19200000
-				811000000
-				19200000
-				19200000>;
+				800000000>;
 		};
+
 		qcom,npu-pwrlevel@5 {
 			reg = <5>;
 			vreg = <7>;
-			clk-freq = <0
-				0
-				0
-				400000000
-				908000000
-				908000000
+			clk-freq = <19200000
+				500000000
+				1000000000
+				1000000000
+				1000000000
+				1000000000
+				700000000
 				75000000
-				533000000
-				400000000
-				150000000
+				806000000
+				300000000
+				19200000
+				100000000
+				200000000
+				300000000
+				300000000
+				300000000
 				19200000
 				300000000
-				400000000
 				19200000
+				100000000
+				1000000000
+				1000000000
+				100000000
 				19200000
-				0
+				1000000000
+				1000000000
 				19200000
-				908000000
-				19200000
-				19200000>;
+				800000000>;
 		};
 	};
 };
