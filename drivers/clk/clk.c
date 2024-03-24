@@ -3447,15 +3447,12 @@ EXPORT_SYMBOL_GPL(clk_debugfs_add_file);
  * Otherwise if print_parent set to 0, print only enabled clocks
  *
  */
-void clock_debug_print_enabled(bool print_parent)
+void clock_debug_print_enabled(void)
 {
 	if (likely(!debug_suspend))
 		return;
 
-	if (print_parent)
-		clock_debug_print_enabled_clocks(NULL);
-	else
-		clock_debug_print_enabled_debug_suspend(NULL);
+	clock_debug_print_enabled_clocks(NULL);
 }
 EXPORT_SYMBOL_GPL(clock_debug_print_enabled);
 
@@ -3537,7 +3534,7 @@ void clk_debug_print_hw(struct clk_core *clk, struct seq_file *f)
 {
 }
 
-void clock_debug_print_enabled(bool print_parent)
+void clock_debug_print_enabled(void)
 {
 }
 #endif
