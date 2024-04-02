@@ -27,7 +27,7 @@ And public attribution of xiaomi platforms(like F1 and so and)
 	qcom,fg-sys-term-current = <(-300)>;
 	qcom,fg-cutoff-voltage = <3400>;
 	qcom,fg-cutoff-current = <200>;
-	qcom,fg-empty-voltage = <3100>;
+	qcom,fg-empty-voltage = <3000>;
 	qcom,fg-batt-temp-delta = <6>;
 	qcom,fg-force-load-profile;
 	qcom,five-pin-battery;
@@ -48,12 +48,12 @@ And public attribution of xiaomi platforms(like F1 and so and)
 	qcom,usb-icl-ua = <2800000>;
 	qcom,fcc-max-ua = <5100000>;
 	qcom,fv-max-uv = <4400000>;
-	google,usb-port-tz-name = "usbc-therm-adc";
 	qcom,auto-recharge-soc = <99>;
 	qcom,chg-term-src = <1>;
 	qcom,chg-term-current-ma = <(-220)>;
-	qcom,thermal-mitigation = <5100000 4000000 3500000 3000000
-				   2500000 1500000 1000000 500000>;
+	qcom,thermal-mitigation = <3000000 2800000 2600000 2400000 2200000 2100000 2000000
+				   1800000 1600000 1500000 1400000 1200000 1000000 900000
+				   800000 500000>;
 	qcom,thermal-mitigation-icl
 				= <2800000 2700000 2600000 2400000 2400000 2400000 2400000
 				   2400000 2400000 2100000 1900000 1700000 1500000 1300000
@@ -124,7 +124,7 @@ And public attribution of xiaomi platforms(like F1 and so and)
 &qupv3_se1_i2c {
 	status = "ok";
 	tfa98xx@34 {
-		compatible = "tfa,tfa98xx";
+		compatible = "nxp,tfa98xx";
 		reset-gpio = <&tlmm 59 0>;
 		irq-gpio = <&tlmm 141 0>;
 		interrupt-parent = <&tlmm>;
@@ -193,16 +193,6 @@ And public attribution of xiaomi platforms(like F1 and so and)
 	simtray {
 		compatible = "xiaomi,simtray-status";
 		status-gpio = <&tlmm 112 0x00>;
-	};
-
-	google_overheat_mitigation: google,overheat_mitigation {
-		compatible = "google,overheat_mitigation";
-		google,port-overheat-work-interval = <2000>;
-		/* Must maintain < 1/15 duty cycle */
-		google,polling-freq = <3>;
-		#cooling-cells = <2>;
-		google,begin-mitigation-temp = <550>;
-		google,end-mitigation-temp = <400>;
 	};
 };
 
@@ -357,7 +347,7 @@ And public attribution of xiaomi platforms(like F1 and so and)
 		goodix,panel-max-p = <127>;
 		goodix,panel-max-fod = <127>;
 	/*	goodix,panel-key-map = <158 172 217>; */ /*KEY_BACK, KEY_HOMEPAGE, KEY_SEARCH*/
-		goodix,power-on-delay-us = <20000>; /*20ms*/
+		goodix,power-on-delay-us = <300000>; /*300ms*/
 		goodix,power-off-delay-us = <5000>;
 		goodix,cfg-name = "goodix_gt9886_cfg_f11.bin";
 		normal-cfg = [
@@ -430,14 +420,6 @@ And public attribution of xiaomi platforms(like F1 and so and)
 		reg = <ADC_USB_IN_V_16>;
 		label = "usb_in_v_div_16";
 		qcom,pre-scaling = <1 16>;
-	};
-
-	usbc_therm {
-		reg = <ADC_AMUX_THM3_PU2>;
-		label = "usbc_therm";
-		qcom,ratiometric;
-		qcom,hw-settle-time = <200>;
-		qcom,pre-scaling = <1 1>;
 	};
 };
 
@@ -529,8 +511,7 @@ And public attribution of xiaomi platforms(like F1 and so and)
 
 &pm8150b_adc_tm {
 	io-channels = <&pm8150b_vadc ADC_AMUX_THM1_PU2>,
-			<&pm8150b_vadc ADC_AMUX_THM2_PU2>,
-			<&pm8150b_vadc ADC_AMUX_THM3_PU2>;
+		<&pm8150b_vadc ADC_AMUX_THM2_PU2>;
 	wp_therm {
 		reg = <ADC_AMUX_THM1_PU2>;
 		qcom,ratiometric;
@@ -538,11 +519,6 @@ And public attribution of xiaomi platforms(like F1 and so and)
 	};
 	pm8150b-wp-therm {
 		reg = <ADC_AMUX_THM2_PU2>;
-		qcom,ratiometric;
-		qcom,hw-settle-time = <200>;
-	};
-	usbc_therm {
-		reg = <ADC_AMUX_THM3_PU2>;
 		qcom,ratiometric;
 		qcom,hw-settle-time = <200>;
 	};
@@ -580,35 +556,11 @@ And public attribution of xiaomi platforms(like F1 and so and)
 		qcom,hw-settle-time = <200>;
 	};
 
-	sdm_therm {
-		reg = <ADC_AMUX_THM2_PU2>;
-		qcom,ratiometric;
-		qcom,hw-settle-time = <200>;
-	};
-
 	pa_therm1 {
 		reg = <ADC_AMUX_THM3_PU2>;
 		qcom,ratiometric;
 		qcom,hw-settle-time = <200>;
 	};
-};
-
-&vbat_lvl0 {
-	temperature = <3200>;
-	hysteresis = <200>;
-	type = "passive";
-};
-
-&vbat_lvl1 {
-	temperature = <3000>;
-	hysteresis = <200>;
-	type = "passive";
-};
-
-&vbat_lvl2 {
-	temperature = <2800>;
-	hysteresis = <200>;
-	type = "passive";
 };
 
 &thermal_zones {
@@ -631,39 +583,6 @@ And public attribution of xiaomi platforms(like F1 and so and)
 		polling-delay = <0>;
 		thermal-governor = "user_space";
 		thermal-sensors = <&pm8150_adc_tm ADC_XO_THERM_PU2>;
-		trips {
-			active-config0 {
-				temperature = <125000>;
-				hysteresis = <1000>;
-				type = "passive";
-			};
-		};
-	};
-
-	sdm-therm {
-		polling-delay-passive = <0>;
-		polling-delay = <0>;
-		thermal-governor = "user_space";
-		thermal-sensors = <&pm8150_adc_tm ADC_AMUX_THM1_PU2>;
-		trips {
-			active-config0 {
-				temperature = <125000>;
-				hysteresis = <1000>;
-				type = "passive";
-			};
-			shutdown-config {
-				temperature = <60000>;
-				hysteresis = <1000>;
-				type = "critical";
-			};
-		};
-	};
-
-	sdm-therm-monitor {
-		polling-delay-passive = <0>;
-		polling-delay = <0>;
-		thermal-governor = "user_space";
-		thermal-sensors = <&pm8150_adc_tm ADC_AMUX_THM1_PU2>;
 		trips {
 			active-config0 {
 				temperature = <125000>;
@@ -734,41 +653,6 @@ And public attribution of xiaomi platforms(like F1 and so and)
 		polling-delay = <0>;
 		thermal-governor = "user_space";
 		thermal-sensors = <&pm8150l_adc_tm ADC_AMUX_THM3_PU2>;
-		trips {
-			active-config0 {
-				temperature = <125000>;
-				hysteresis = <1000>;
-				type = "passive";
-			};
-		};
-	};
-
-	usbc-therm-adc {
-		polling-delay-passive = <1000>;
-		polling-delay = <0>;
-		thermal-governor = "step_wise";
-		thermal-sensors = <&pm8150b_adc_tm ADC_AMUX_THM3_PU2>;
-		trips {
-			usb_throttling_lv1: usb-throttling_lv1 {
-				temperature = <55000>;
-				hysteresis = <10000>;
-				type = "passive";
-			};
-		};
-		cooling-maps {
-			usb_throttling_lv1 {
-				trip = <&usb_throttling_lv1>;
-				cooling-device =
-					<&google_overheat_mitigation 1 1>;
-			};
-		};
-	};
-
-	usbc-therm-monitor {
-		polling-delay-passive = <0>;
-		polling-delay = <0>;
-		thermal-governor = "user_space";
-		thermal-sensors = <&pm8150b_adc_tm ADC_AMUX_THM3_PU2>;
 		trips {
 			active-config0 {
 				temperature = <125000>;

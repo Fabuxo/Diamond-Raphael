@@ -1,4 +1,4 @@
-/* Copyright (c) 2018-2020, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2018-2019, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -17,10 +17,9 @@
 		qcom,firmware-name = "a640_zap";
 	};
 
-	msm_bus: qcom,kgsl-busmon {
+	msm_bus: qcom,kgsl-busmon{
 		label = "kgsl-busmon";
 		compatible = "qcom,kgsl-busmon";
-		operating-points-v2 = <&gpu_opp_table>;
 	};
 
 	gpubw: qcom,gpubw {
@@ -80,17 +79,21 @@
 
 		qcom,initial-pwrlevel = <5>;
 
-		qcom,idle-timeout = <80>; //msecs
+		qcom,gpu-quirk-secvid-set-once;
+		qcom,gpu-quirk-cx-gdsc;
 
-		qcom,highest-bank-bit = <16>;
+		qcom,idle-timeout = <80>; //msecs
+		qcom,no-nap;
+
+		qcom,highest-bank-bit = <15>;
 
 		qcom,min-access-length = <32>;
 
-		qcom,ubwc-mode = <4>;
+		qcom,ubwc-mode = <3>;
 
-		qcom,snapshot-size = <0x200000>; /* bytes */
+		qcom,snapshot-size = <0x200000>; //bytes
 
-		qcom,gpu-qdss-stm = <0x161c0000 0x40000>; /* base addr, size */
+		qcom,gpu-qdss-stm = <0x161c0000 0x40000>; // base addr, size
 
 		qcom,tsens-name = "tsens_tz_sensor12";
 		#cooling-cells = <2>;
@@ -147,6 +150,36 @@
 		/* GPU related llc slices */
 		cache-slice-names = "gpu", "gpuhtw";
 		cache-slices = <&llcc 12>, <&llcc 11>;
+
+
+		qcom,gpu-coresights {
+			#address-cells = <1>;
+			#size-cells = <0>;
+			compatible = "qcom,gpu-coresight";
+
+			qcom,gpu-coresight@0 {
+				reg = <0>;
+				coresight-name = "coresight-gfx";
+				coresight-atid = <50>;
+				port {
+					gfx_out_funnel_gfx: endpoint {
+						remote-endpoint =
+						  <&funnel_gfx_in_gfx>;
+					};
+				};
+			};
+			qcom,gpu-coresight@1 {
+				reg = <1>;
+				coresight-name = "coresight-gfx-cx";
+				coresight-atid = <51>;
+				port {
+					gfx_cx_out_funnel_gfx: endpoint {
+						remote-endpoint =
+						  <&funnel_gfx_in_gfx_cx>;
+					};
+				};
+			};
+		};
 
 		qcom,l3-pwrlevels {
 			#address-cells = <1>;
@@ -342,11 +375,10 @@
 				<&clock_gpucc GPU_CC_CXO_CLK>,
 				<&clock_gcc GCC_DDRSS_GPU_AXI_CLK>,
 				<&clock_gcc GCC_GPU_MEMNOC_GFX_CLK>,
-				<&clock_gpucc GPU_CC_AHB_CLK>,
-				<&clock_aop QDSS_CLK>;
+				<&clock_gpucc GPU_CC_AHB_CLK>;
 
 		clock-names = "gmu_clk", "cxo_clk", "axi_clk",
-				"memnoc_clk", "gpu_cc_ahb", "apb_pclk";
+				"memnoc_clk", "gpu_cc_ahb";
 
 		/* AOP mailbox for sending ACD enable and disable messages */
 		mboxes = <&qmp_aop 0>;

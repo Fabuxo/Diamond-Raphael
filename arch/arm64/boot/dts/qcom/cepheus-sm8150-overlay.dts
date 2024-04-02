@@ -1,4 +1,4 @@
-/* Copyright (c) 2020, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2017-2018, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -11,24 +11,18 @@
  */
 
 /dts-v1/;
+/plugin/;
 
-#include "qcs403.dtsi"
-#include "sa2150p-ccard.dtsi"
-#include "sa2145p-ccard.dtsi"
+#include <dt-bindings/clock/qcom,gcc-sm8150.h>
+#include <dt-bindings/clock/qcom,camcc-sm8150.h>
+#include <dt-bindings/clock/qcom,rpmh.h>
+#include <dt-bindings/interrupt-controller/arm-gic.h>
+
+#include "cepheus-sm8150.dtsi"
+#include "cepheus-audio-overlay.dtsi"
 
 / {
-	model = "Qualcomm Technologies, Inc. SA2145P CCARD NAND SD";
-	compatible = "qcom,sa2145p-ccard", "qcom,qcs403", "qcom,sa2145p",
-				"qcom,ccard";
-	qcom,board-id = <0x010019 3>;
-};
-
-&i2c_3 {
-	status = "okay";
-
-	eeprom@57 {
-		compatible = "atmel,24c128";
-		reg = <0x57>;
-		pagesize = <32>;
-	};
+	model = "CEPHEUS";
+	compatible = "qcom,sm8150-cdp", "qcom,sm8150", "qcom,cdp";
+	qcom,board-id = <37 0>;
 };
