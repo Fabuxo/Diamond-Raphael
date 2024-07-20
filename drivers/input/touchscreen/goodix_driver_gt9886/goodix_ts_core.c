@@ -1250,27 +1250,23 @@ int goodix_ts_irq_setup(struct goodix_ts_core *core_data)
 	int r;
 
 	/* if ts_bdata-> irq is invalid */
-	if (ts_bdata->irq <= 0) {
+	if (ts_bdata->irq <= 0)
 		core_data->irq = gpio_to_irq(ts_bdata->irq_gpio);
-	} else {
+	else
 		core_data->irq = ts_bdata->irq;
-	}
 
 	ts_info("IRQ:%u,flags:%d", core_data->irq, (int)ts_bdata->irq_flags);
 	r = devm_request_threaded_irq(&core_data->pdev->dev,
-			core_data->irq, NULL,
-			goodix_ts_threadirq_func,
-			ts_bdata->irq_flags | IRQF_ONESHOT | IRQF_NOBALANCING,
-			GOODIX_CORE_DRIVER_NAME, core_data);
+				      core_data->irq, NULL,
+				      goodix_ts_threadirq_func,
+				      ts_bdata->irq_flags | IRQF_ONESHOT,
+				      GOODIX_CORE_DRIVER_NAME,
+				      core_data);
 	if (r < 0)
 		ts_err("Failed to requeset threaded irq:%d", r);
 	else
 		atomic_set(&core_data->irq_enabled, 1);
 
-	core_data->pm_touch_req.type = PM_QOS_REQ_AFFINE_IRQ;
-	core_data->pm_touch_req.irq = core_data->irq;
-	pm_qos_add_request(&core_data->pm_touch_req, PM_QOS_CPU_DMA_LATENCY,
-			   PM_QOS_DEFAULT_VALUE);
 	return r;
 }
 
@@ -1280,7 +1276,8 @@ int goodix_ts_irq_setup(struct goodix_ts_core *core_data)
  * enable: enable or disable irq
  * return: 0 ok, <0 failed
  */
-int goodix_ts_irq_enable(struct goodix_ts_core *core_data, bool enable)
+int goodix_ts_irq_enable(struct goodix_ts_core *core_data,
+			bool enable)
 {
 	if (enable) {
 		if (!atomic_cmpxchg(&core_data->irq_enabled, 0, 1)) {
@@ -1293,9 +1290,11 @@ int goodix_ts_irq_enable(struct goodix_ts_core *core_data, bool enable)
 			ts_debug("Irq disabled");
 		}
 	}
+
 	return 0;
 }
 EXPORT_SYMBOL(goodix_ts_irq_enable);
+
 /**
  * goodix_ts_power_init - Get regulator for touch device
  * @core_data: pointer to touch core data
