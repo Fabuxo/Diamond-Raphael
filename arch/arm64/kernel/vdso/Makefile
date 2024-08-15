@@ -20,7 +20,6 @@ ldflags-y := -shared -soname=linux-vdso.so.1  --hash-style=sysv \
 ccflags-y := -fno-stack-protector
 ccflags-y += -DDISABLE_BRANCH_PROFILING -DBUILD_VDSO -ffixed-x18
 ccflags-y += $(call cc-option, -fno-whole-program)
-ccflags-y += -Ofast
 
 # Force -O2 to avoid libgcc dependencies
 CFLAGS_REMOVE_vgettimeofday.o = -pg -Os
